@@ -234,7 +234,7 @@ fn key_files_are_described() {
         e,
         format!(
             "scytale sig sign ecdsa-sha256: {ed} holds an Ed25519 key; \
-             ecdsa-sha256 needs a P-256 or P-384 key"
+             ecdsa-sha256 needs a P-256, P-384 or P-521 key"
         )
     );
     let e = usage(&["sig", "sign", "ed25519", "-k", ed_pub], b"m");

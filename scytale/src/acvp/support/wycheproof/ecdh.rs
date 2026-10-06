@@ -1,4 +1,4 @@
-//! Wycheproof's ECDH cases on P-256 and P-384: the public key as a
+//! Wycheproof's ECDH cases on P-256, P-384 and P-521: the public key as a
 //! `SubjectPublicKeyInfo` in one pair of files and as a bare SEC 1
 //! point in the other, the shared secret checked, and every invalid
 //! case refused. The invalid cases are the point: points off the
@@ -11,7 +11,7 @@ use std::{eprintln, format, println, string::String, vec, vec::Vec};
 
 use super::super::acvp::hex;
 use super::load;
-use crate::kex::ecdh::{p256, p384};
+use crate::kex::ecdh::{p256, p384, p521};
 use serde_json::Value;
 
 /// Runs every vendored file; each is separately optional.
@@ -21,6 +21,8 @@ pub fn run() {
     file::<P256>("wycheproof/ecdh_secp256r1_ecpoint_test.json", &mut c);
     file::<P384>("wycheproof/ecdh_secp384r1_test.json", &mut c);
     file::<P384>("wycheproof/ecdh_secp384r1_ecpoint_test.json", &mut c);
+    file::<P521>("wycheproof/ecdh_secp521r1_test.json", &mut c);
+    file::<P521>("wycheproof/ecdh_secp521r1_ecpoint_test.json", &mut c);
     if c.files > 0 {
         assert!(c.valid >= 500, "only {} valid cases", c.valid);
         assert!(c.invalid >= 100, "only {} invalid cases", c.invalid);
@@ -65,6 +67,7 @@ macro_rules! curve {
 
 curve!(P256, p256, 32);
 curve!(P384, p384, 48);
+curve!(P521, p521, 66);
 
 /// A big-endian value left-padded to `width`, or `None` when it is
 /// wider.

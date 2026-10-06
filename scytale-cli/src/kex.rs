@@ -29,7 +29,7 @@ impl KexOp {
 #[derive(Args)]
 #[command(after_help = crate::help::VALUES)]
 pub struct AgreeArgs {
-    /// The agreement: x25519, ecdh-p256, ecdh-p384
+    /// The agreement: x25519, ecdh-p256, ecdh-p384, ecdh-p521
     pub algorithm: String,
     /// The private key file (PEM)
     #[arg(short, long)]
@@ -52,6 +52,7 @@ pub fn run(op: KexOp) -> Result<()> {
         "x25519" => Algorithm::X25519,
         "ecdh-p256" => Algorithm::P256,
         "ecdh-p384" => Algorithm::P384,
+        "ecdh-p521" => Algorithm::P521,
         other => return Err(usage!("no key agreement named \"{other}\"")),
     };
     let private = key::read_private(&args.key, &[algorithm], name)?;
@@ -74,9 +75,14 @@ pub fn run(op: KexOp) -> Result<()> {
             let public = ecdh::p256::PublicKey::try_from_pem(&public)?;
             Zeroizing::new(private.shared_secret(&public).to_vec())
         }
-        _ => {
+        Algorithm::P384 => {
             let private = ecdh::p384::PrivateKey::try_from_pem(&private)?;
             let public = ecdh::p384::PublicKey::try_from_pem(&public)?;
+            Zeroizing::new(private.shared_secret(&public).to_vec())
+        }
+        _ => {
+            let private = ecdh::p521::PrivateKey::try_from_pem(&private)?;
+            let public = ecdh::p521::PublicKey::try_from_pem(&public)?;
             Zeroizing::new(private.shared_secret(&public).to_vec())
         }
     };

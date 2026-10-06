@@ -479,8 +479,10 @@ created readable by its owner alone. The algorithm is one of
 .BR x25519 ,
 .BR ecdsa\-p256 ,
 .BR ecdsa\-p384 ,
+.BR ecdsa\-p521 ,
 .BR ecdh\-p256 ,
 .BR ecdh\-p384 ,
+.BR ecdh\-p521 ,
 .BI rsa\- bits
 for any
 .I bits
@@ -503,7 +505,8 @@ or
 .B shake
 and a
 .I size
-of 128, 192 or 256. Keys on P-256 and P-384 serve both ECDSA and ECDH;
+of 128, 192 or 256. Keys on P-256, P-384 and P-521 serve both ECDSA
+and ECDH;
 an RSA key serves both signatures and encryption.
 .SS key public
 .B scytale key public
@@ -573,7 +576,7 @@ makes the public one.
 .B ed25519
 on an Ed25519 key;
 .BI ecdsa\- hash
-on a P-256 or P-384 key, the curve being the key's;
+on a P-256, P-384 or P-521 key, the curve being the key's;
 .BI rsa\-pss\- hash
 on an RSA or RSA-PSS key, salted with a hash's worth of random bytes;
 .BI rsa\-pkcs1\- hash
@@ -616,9 +619,10 @@ and the peer's public key in
 .IR peer ,
 under
 .BR x25519 ,
-.B ecdh\-p256
+.BR ecdh\-p256 ,
+.B ecdh\-p384
 or
-.BR ecdh\-p384 ;
+.BR ecdh\-p521 ;
 both keys must be for it. Hex without a flag. A shared secret is
 keying material, not a key; derive keys from it with
 .BR "kdf hkdf" .

@@ -1,7 +1,7 @@
 //! `scytale sig`: signing a message and checking a signature.
 //!
 //! The scheme is named on the call and the key file must hold a key
-//! for it: `ed25519`; `ecdsa-HASH` on a P-256 or P-384 key;
+//! for it: `ed25519`; `ecdsa-HASH` on a P-256, P-384 or P-521 key;
 //! `rsa-pss-HASH` on an RSA or RSA-PSS key; `rsa-pkcs1-HASH` on an
 //! RSA key; the ML-DSA and SLH-DSA sets by their own names.
 
@@ -114,7 +114,9 @@ impl Scheme {
     fn keys(&self) -> Vec<Algorithm> {
         match self {
             Scheme::Ed25519 => vec![Algorithm::Ed25519],
-            Scheme::Ecdsa(_) => vec![Algorithm::P256, Algorithm::P384],
+            Scheme::Ecdsa(_) => {
+                vec![Algorithm::P256, Algorithm::P384, Algorithm::P521]
+            }
             Scheme::RsaPss(_) => vec![Algorithm::Rsa, Algorithm::RsaPss],
             Scheme::RsaPkcs1(_) => vec![Algorithm::Rsa],
             Scheme::PostQuantum(a) => vec![*a],
@@ -183,7 +185,7 @@ fn sign(args: SignArgs) -> Result<()> {
                     der[..n].to_vec()
                 }
             }
-            _ => {
+            Algorithm::P384 => {
                 let key = ecdsa::p384::PrivateKey::try_from_pem(&pem)?;
                 let sig = with_hash!(hash, H => Ok(key.sign::<H>(&message)?))?;
                 if args.raw_ecdsa {
@@ -191,6 +193,17 @@ fn sign(args: SignArgs) -> Result<()> {
                 } else {
                     let mut der = [0u8; 128];
                     let n = ecdsa::p384::signature_der(&sig, &mut der)?;
+                    der[..n].to_vec()
+                }
+            }
+            _ => {
+                let key = ecdsa::p521::PrivateKey::try_from_pem(&pem)?;
+                let sig = with_hash!(hash, H => Ok(key.sign::<H>(&message)?))?;
+                if args.raw_ecdsa {
+                    sig.to_vec()
+                } else {
+                    let mut der = [0u8; 160];
+                    let n = ecdsa::p521::signature_der(&sig, &mut der)?;
                     der[..n].to_vec()
                 }
             }
@@ -273,13 +286,24 @@ fn verify(args: VerifyArgs) -> Result<()> {
                     };
                     with_hash!(hash, H => Ok(key.verify::<H>(&message, &sig)))?
                 }
-                _ => {
+                Algorithm::P384 => {
                     let key = ecdsa::p384::PublicKey::try_from_pem(&pem)?;
                     let sig = if args.raw_ecdsa {
                         let sig = fixed(ecdsa::p384::SIGNATURE_SIZE)?;
                         sig.try_into().map_err(|_| invalid())?
                     } else {
                         ecdsa::p384::signature_from_der(&signature)
+                            .map_err(der)?
+                    };
+                    with_hash!(hash, H => Ok(key.verify::<H>(&message, &sig)))?
+                }
+                _ => {
+                    let key = ecdsa::p521::PublicKey::try_from_pem(&pem)?;
+                    let sig = if args.raw_ecdsa {
+                        let sig = fixed(ecdsa::p521::SIGNATURE_SIZE)?;
+                        sig.try_into().map_err(|_| invalid())?
+                    } else {
+                        ecdsa::p521::signature_from_der(&signature)
                             .map_err(der)?
                     };
                     with_hash!(hash, H => Ok(key.verify::<H>(&message, &sig)))?

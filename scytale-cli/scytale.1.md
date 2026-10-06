@@ -306,12 +306,13 @@ and salt may be given as **str:**. Hex without a flag.
 A new private key, as a PEM **PRIVATE KEY** block (PKCS#8), to standard
 output or to *file*, created readable by its owner alone. The algorithm
 is one of **ed25519**, **x25519**, **ecdsa-p256**, **ecdsa-p384**,
-**ecdh-p256**, **ecdh-p384**, **rsa-***bits* for any *bits* from 1024 to
-8192, **ml-kem-512**, **ml-kem-768**, **ml-kem-1024**, **ml-dsa-44**,
-**ml-dsa-65**, **ml-dsa-87**, or **slh-dsa-***hash***-***size***s** and
+**ecdsa-p521**, **ecdh-p256**, **ecdh-p384**, **ecdh-p521**,
+**rsa-***bits* for any *bits* from 1024 to 8192, **ml-kem-512**,
+**ml-kem-768**, **ml-kem-1024**, **ml-dsa-44**, **ml-dsa-65**,
+**ml-dsa-87**, or **slh-dsa-***hash***-***size***s** and
 **slh-dsa-***hash***-***size***f** for a *hash* of **sha2** or **shake**
-and a *size* of 128, 192 or 256. Keys on P-256 and P-384 serve both
-ECDSA and ECDH; an RSA key serves both signatures and encryption.
+and a *size* of 128, 192 or 256. Keys on P-256, P-384 and P-521 serve
+both ECDSA and ECDH; an RSA key serves both signatures and encryption.
 
 ## key public
 
@@ -353,12 +354,12 @@ verified and 1 if not. A private key file is refused here; **key
 public** makes the public one.
 
 *scheme*  
-**ed25519** on an Ed25519 key; **ecdsa-***hash* on a P-256 or P-384 key,
-the curve being the key's; **rsa-pss-***hash* on an RSA or RSA-PSS key,
-salted with a hash's worth of random bytes; **rsa-pkcs1-***hash* on an
-RSA key, deterministic; **ml-dsa-44**, **ml-dsa-65**, **ml-dsa-87** and
-the twelve **slh-dsa** sets on their own keys. *hash* is any of the
-plain hashes above.
+**ed25519** on an Ed25519 key; **ecdsa-***hash* on a P-256, P-384 or
+P-521 key, the curve being the key's; **rsa-pss-***hash* on an RSA or
+RSA-PSS key, salted with a hash's worth of random bytes;
+**rsa-pkcs1-***hash* on an RSA key, deterministic; **ml-dsa-44**,
+**ml-dsa-65**, **ml-dsa-87** and the twelve **slh-dsa** sets on their
+own keys. *hash* is any of the plain hashes above.
 
 **--context ***value*  
 The context string for Ed25519 (which then signs in the Ed25519ctx
@@ -377,9 +378,10 @@ define, and RSA signatures the modulus length.
 \[**--hex**\|**--raw**\] \[*-o file*\]
 
 The shared secret between the private key in *private* and the peer's
-public key in *peer*, under **x25519**, **ecdh-p256** or **ecdh-p384**;
-both keys must be for it. Hex without a flag. A shared secret is keying
-material, not a key; derive keys from it with **kdf hkdf**.
+public key in *peer*, under **x25519**, **ecdh-p256**, **ecdh-p384** or
+**ecdh-p521**; both keys must be for it. Hex without a flag. A shared
+secret is keying material, not a key; derive keys from it with **kdf
+hkdf**.
 
 ## kem encapsulate
 

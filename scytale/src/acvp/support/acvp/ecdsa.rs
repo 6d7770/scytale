@@ -1,7 +1,7 @@
 //! ECDSA keyGen, keyVer, sigGen, sigVer and the deterministic
-//! sigGen, for the P-256 and P-384 groups: the other curves are not
-//! implemented, and the SHAKE groups are skipped since ECDSA over an
-//! XOF is not offered.
+//! sigGen, for the P-256, P-384 and P-521 groups: the P-224 and
+//! binary-curve groups are not implemented, and the SHAKE groups are
+//! skipped since ECDSA over an XOF is not offered.
 //!
 //! The deterministic suite is the exact check on signing, since
 //! RFC 6979 fixes the nonce. The random-nonce sigGen suite cannot be
@@ -22,7 +22,7 @@ use crate::hash::sha2::{
     Sha224, Sha256, Sha384, Sha512, Sha512_224, Sha512_256,
 };
 use crate::hash::sha3::{Sha3_224, Sha3_256, Sha3_384, Sha3_512};
-use crate::sig::ecdsa::{p256, p384};
+use crate::sig::ecdsa::{p256, p384, p521};
 use serde_json::Value;
 
 /// One curve's key types, so a driver can be written once.
@@ -85,6 +85,7 @@ macro_rules! curve {
 
 curve!(P256, p256, "P-256", 32);
 curve!(P384, p384, "P-384", 48);
+curve!(P521, p521, "P-521", 66);
 
 /// A big-endian value left-padded to `width`, or `None` when it is
 /// wider, which a keyVer case may deliberately be.
@@ -150,12 +151,13 @@ pub fn run_key_gen() {
             match group["curve"].as_str() {
                 Some(P256::NAME) => key_gen::<P256>(t, &tag),
                 Some(P384::NAME) => key_gen::<P384>(t, &tag),
+                Some(P521::NAME) => key_gen::<P521>(t, &tag),
                 _ => continue,
             }
             cases += 1;
         }
     }
-    assert!(cases >= 10, "only {cases} keyGen cases");
+    assert!(cases >= 18, "only {cases} keyGen cases");
 }
 
 fn key_gen<C: Curve>(t: &Value, tag: &str) {
@@ -179,6 +181,7 @@ pub fn run_key_ver() {
             let accepted = match group["curve"].as_str() {
                 Some(P256::NAME) => key_ver::<P256>(t),
                 Some(P384::NAME) => key_ver::<P384>(t),
+                Some(P521::NAME) => key_ver::<P521>(t),
                 _ => continue,
             };
             let should_pass = t["testPassed"].as_bool().expect("testPassed");
@@ -189,7 +192,7 @@ pub fn run_key_ver() {
             }
         }
     }
-    assert!(cases >= 6, "only {cases} keyVer cases");
+    assert!(cases >= 9, "only {cases} keyVer cases");
     assert!(rejections >= 4, "only {rejections} rejections");
 }
 
@@ -214,6 +217,7 @@ pub fn run_sig_ver() {
             let accepted = match group["curve"].as_str() {
                 Some(P256::NAME) => with_hash!(hash, sig_ver::<P256>(t)),
                 Some(P384::NAME) => with_hash!(hash, sig_ver::<P384>(t)),
+                Some(P521::NAME) => with_hash!(hash, sig_ver::<P521>(t)),
                 _ => continue,
             };
             let Some(accepted) = accepted else {
@@ -227,7 +231,7 @@ pub fn run_sig_ver() {
             }
         }
     }
-    assert!(cases >= 60, "only {cases} sigVer cases");
+    assert!(cases >= 105, "only {cases} sigVer cases");
     assert!(rejections >= 40, "only {rejections} rejections");
 }
 
@@ -260,11 +264,12 @@ pub fn run_sig_gen() {
         let ran = match group["curve"].as_str() {
             Some(P256::NAME) => with_hash!(hash, sig_gen::<P256>(group, false)),
             Some(P384::NAME) => with_hash!(hash, sig_gen::<P384>(group, false)),
+            Some(P521::NAME) => with_hash!(hash, sig_gen::<P521>(group, false)),
             _ => continue,
         };
         cases += ran.unwrap_or(0);
     }
-    assert!(cases >= 200, "only {cases} sigGen cases");
+    assert!(cases >= 300, "only {cases} sigGen cases");
 }
 
 /// Runs the deterministic generation suite, comparing exact
@@ -283,11 +288,12 @@ pub fn run_det_sig_gen() {
         let ran = match group["curve"].as_str() {
             Some(P256::NAME) => with_hash!(hash, sig_gen::<P256>(group, true)),
             Some(P384::NAME) => with_hash!(hash, sig_gen::<P384>(group, true)),
+            Some(P521::NAME) => with_hash!(hash, sig_gen::<P521>(group, true)),
             _ => continue,
         };
         cases += ran.unwrap_or(0);
     }
-    assert!(cases >= 200, "only {cases} deterministic sigGen cases");
+    assert!(cases >= 330, "only {cases} deterministic sigGen cases");
 }
 
 /// One sigGen group: the key from `d` must give the group's `q`,

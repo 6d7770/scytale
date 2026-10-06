@@ -275,9 +275,10 @@ fn fits(
         path.display(),
         article(info.algorithm),
         info.algorithm,
-        match names.len() {
-            1 => format!("a{} {}", article(want[0]), names[0]),
-            _ => format!("a {}", names.join(" or ")),
+        match names.as_slice() {
+            [one] => format!("a{} {one}", article(want[0])),
+            [rest @ .., last] => format!("a {} or {last}", rest.join(", ")),
+            [] => unreachable!("a scheme runs on some key"),
         }
     ))
 }
@@ -386,6 +387,11 @@ fn generate(name: &str) -> Result<Zeroizing<Vec<u8>>> {
                 &mut rng
             )?)
         }
+        "ecdsa-p521" | "ecdh-p521" => {
+            into_pem!(scytale::sig::ecdsa::p521::PrivateKey::generate(
+                &mut rng
+            )?)
+        }
         _ => {
             let Some(algorithm) = pq_by_name(name) else {
                 return Err(usage!("no key algorithm named \"{name}\""));
@@ -424,6 +430,10 @@ fn public(algorithm: Algorithm, pem: &[u8]) -> Result<Vec<u8>> {
         }
         Algorithm::P384 => {
             let key = scytale::sig::ecdsa::p384::PrivateKey::try_from_pem(pem)?;
+            into_pem!(key.public_key())
+        }
+        Algorithm::P521 => {
+            let key = scytale::sig::ecdsa::p521::PrivateKey::try_from_pem(pem)?;
             into_pem!(key.public_key())
         }
         Algorithm::Rsa | Algorithm::RsaPss => {
