@@ -402,7 +402,7 @@ pub static KDF: Family = Family {
     entries: &[&KDF_HASHES],
 };
 
-static KEYS: [Entry; 27] = [
+static KEYS: [Entry; 29] = [
     e("ed25519", No, No, No, No, "signatures"),
     e("x25519", No, No, No, No, "key agreement"),
     e(
@@ -422,6 +422,14 @@ static KEYS: [Entry; 27] = [
         "signatures; serves ecdh-p384 too",
     ),
     e(
+        "ecdsa-p521",
+        No,
+        No,
+        No,
+        No,
+        "signatures; serves ecdh-p521 too",
+    ),
+    e(
         "ecdh-p256",
         No,
         No,
@@ -436,6 +444,14 @@ static KEYS: [Entry; 27] = [
         No,
         No,
         "key agreement; the same key as ecdsa-p384",
+    ),
+    e(
+        "ecdh-p521",
+        No,
+        No,
+        No,
+        No,
+        "key agreement; the same key as ecdsa-p521",
     ),
     e(
         "rsa-2048",
@@ -482,7 +498,7 @@ static ED25519: [Entry; 1] = [e(
     "an Ed25519 key; --context",
 )];
 static ECDSA: [Entry; 11] =
-    over_hashes!("ecdsa-", No, any, "a P-256 or P-384 key; DER out");
+    over_hashes!("ecdsa-", No, any, "a P-256, P-384 or P-521 key; DER out");
 static RSA_PSS: [Entry; 11] =
     over_hashes!("rsa-pss-", No, any, "an RSA or RSA-PSS key");
 static RSA_PKCS1: [Entry; 11] =
@@ -511,10 +527,11 @@ pub static SIG: Family = Family {
     entries: &[&ED25519, &ECDSA, &RSA_PSS, &RSA_PKCS1, &PQ_SIGS],
 };
 
-static KEXS: [Entry; 3] = [
+static KEXS: [Entry; 4] = [
     e("x25519", No, No, No, Exact(32), "X25519 keys"),
     e("ecdh-p256", No, No, No, Exact(32), "P-256 keys"),
     e("ecdh-p384", No, No, No, Exact(48), "P-384 keys"),
+    e("ecdh-p521", No, No, No, Exact(66), "P-521 keys"),
 ];
 
 pub static KEX: Family = Family {

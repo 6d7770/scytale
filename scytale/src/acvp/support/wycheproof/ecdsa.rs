@@ -1,4 +1,4 @@
-//! Wycheproof's ECDSA verification cases on P-256 and P-384, in
+//! Wycheproof's ECDSA verification cases on P-256, P-384 and P-521, in
 //! both signature forms: the DER `ECDSA-Sig-Value` files, whose
 //! invalid cases are mostly encodings bent every way ASN.1 allows,
 //! and the P1363 `r || s` files, whose invalid cases are arithmetic.
@@ -11,8 +11,8 @@ use std::{eprintln, format, println, string::String, vec, vec::Vec};
 use super::super::acvp::hex;
 use super::load;
 use crate::hash::Hash;
-use crate::hash::sha2::{Sha256, Sha384};
-use crate::sig::ecdsa::{p256, p384};
+use crate::hash::sha2::{Sha256, Sha384, Sha512};
+use crate::sig::ecdsa::{p256, p384, p521};
 use serde_json::Value;
 
 /// Runs every vendored file; each is separately optional.
@@ -20,12 +20,17 @@ pub fn run() {
     let mut c = Counts::default();
     der::<P256, Sha256>("wycheproof/ecdsa_secp256r1_sha256_test.json", &mut c);
     der::<P384, Sha384>("wycheproof/ecdsa_secp384r1_sha384_test.json", &mut c);
+    der::<P521, Sha512>("wycheproof/ecdsa_secp521r1_sha512_test.json", &mut c);
     fixed::<P256, Sha256>(
         "wycheproof/ecdsa_secp256r1_sha256_p1363_test.json",
         &mut c,
     );
     fixed::<P384, Sha384>(
         "wycheproof/ecdsa_secp384r1_sha384_p1363_test.json",
+        &mut c,
+    );
+    fixed::<P521, Sha512>(
+        "wycheproof/ecdsa_secp521r1_sha512_p1363_test.json",
         &mut c,
     );
     if c.files > 0 {
@@ -104,6 +109,7 @@ macro_rules! curve {
 
 curve!(P256, p256, 32);
 curve!(P384, p384, 48);
+curve!(P521, p521, 66);
 
 fn der<C: Curve, H: Hash + Default>(file: &str, counts: &mut Counts) {
     let Some(doc) = load(file, "ECDSA") else {

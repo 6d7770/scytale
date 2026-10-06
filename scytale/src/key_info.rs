@@ -39,6 +39,8 @@ pub enum Algorithm {
     P256,
     /// A key on P-384, for ECDH or ECDSA.
     P384,
+    /// A key on P-521, for ECDH or ECDSA.
+    P521,
     /// X25519.
     X25519,
     /// Ed25519.
@@ -89,6 +91,7 @@ impl Algorithm {
             Algorithm::RsaPss => "RSA-PSS",
             Algorithm::P256 => "P-256",
             Algorithm::P384 => "P-384",
+            Algorithm::P521 => "P-521",
             Algorithm::X25519 => "X25519",
             Algorithm::Ed25519 => "Ed25519",
             Algorithm::MlKem512 => "ML-KEM-512",
@@ -177,6 +180,8 @@ impl Algorithm {
             Ok(Algorithm::P256)
         } else if oid == ec::P384.oid {
             Ok(Algorithm::P384)
+        } else if oid == ec::P521.oid {
+            Ok(Algorithm::P521)
         } else {
             Err(Error::NotSupported)
         }
@@ -414,6 +419,7 @@ mod tests {
         }
         curve!(crate::kex::ecdh::p256, Algorithm::P256);
         curve!(crate::kex::ecdh::p384, Algorithm::P384);
+        curve!(crate::kex::ecdh::p521, Algorithm::P521);
         curve!(crate::sig::ecdsa::p256, Algorithm::P256);
 
         let key =

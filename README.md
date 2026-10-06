@@ -131,7 +131,7 @@ The API documentation is on [docs.rs](https://docs.rs/scytale), and
 test vectors, against the NIST Automated Cryptographic Validation
 Program (ACVP) vectors, and against Project Wycheproof, whose cases
 are chosen to break implementations rather than to exercise them.
-The corpus is 115 files holding 85,393 cases, and every case this
+The corpus is 119 files holding 88,084 cases, and every case this
 build can run is run; the Monte Carlo groups chain a thousand cipher
 calls per case, with the key re-derived at each step. Every
 implementation is put through the whole vector set for its primitive,
@@ -182,9 +182,9 @@ the machinery behind it:
 | `mac` | message authentication | HMAC, CMAC, KMAC, Poly1305 |
 | `kdf` | key derivation | HKDF, PBKDF2 |
 | `kem` | key encapsulation | ML-KEM-512, -768 and -1024 |
-| `kex` | key agreement | X25519, ECDH over P-256 and P-384 |
+| `kex` | key agreement | X25519, ECDH over P-256, P-384 and P-521 |
 | `pke` | public-key encryption | RSA-OAEP |
-| `sig` | signatures | Ed25519, ECDSA over P-256 and P-384, ML-DSA, SLH-DSA, RSA-PSS, RSA PKCS#1 v1.5 |
+| `sig` | signatures | Ed25519, ECDSA over P-256, P-384 and P-521, ML-DSA, SLH-DSA, RSA-PSS, RSA PKCS#1 v1.5 |
 | `random` | random numbers | CTR_DRBG over AES-256, and what seeds it |
 | `constant_time` | comparing secrets | equality whose timing says nothing |
 | `codec` | bytes as text | hex, base64 and PEM, in constant time |
@@ -298,10 +298,10 @@ encryption keys are distinct types: a key does one job.
 | --- | --- | --- |
 | ML-KEM (FIPS 203), all three sets | `kem` | post-quantum; implicit rejection; seed and expanded keys |
 | X25519 (RFC 7748) | `kex` | shared secret needs HKDF; refuses low-order keys |
-| ECDH (SP 800-56A) over P-256, P-384 | `kex` | every public key checked on the curve; compressed points read |
+| ECDH (SP 800-56A) over P-256, P-384, P-521 | `kex` | every public key checked on the curve; compressed points read |
 | RSA-OAEP (RFC 8017) | `pke` | constant-time unpadding; no v1.5 decryption, ever |
 | Ed25519, Ed25519ctx, Ed25519ph (RFC 8032) | `sig` | deterministic; refuses malleable signatures; context strings |
-| ECDSA (FIPS 186-5) over P-256, P-384 | `sig` | RFC 6979 nonces; r \|\| s and DER signature forms |
+| ECDSA (FIPS 186-5) over P-256, P-384, P-521 | `sig` | RFC 6979 nonces; r \|\| s and DER signature forms |
 | RSA-PSS, RSA PKCS#1 v1.5 (RFC 8017) | `sig` | any width; CRT signing and key generation |
 | ML-DSA (FIPS 204), all three sets | `sig` | post-quantum; hedged or deterministic; context strings |
 | SLH-DSA (FIPS 205), all twelve sets | `sig` | post-quantum, hash-based; hedged or deterministic; context strings |

@@ -24,7 +24,7 @@ and back.
 | `scytale cipher encrypt` / `decrypt` | the unauthenticated modes | AES-ECB, -CBC, -CTR, -CFB, -OFB, -XTS, ChaCha20, FF1, FF3-1 |
 | `scytale cipher wrap` / `unwrap` | key wrapping | AES-KW, AES-KWP |
 | `scytale kdf hkdf` / `pbkdf2` | keys from keying material, or from a password | HKDF, PBKDF2 |
-| `scytale key generate` / `public` / `show` | key files, as PEM | Ed25519, X25519, P-256, P-384, RSA, ML-KEM, ML-DSA, SLH-DSA |
+| `scytale key generate` / `public` / `show` | key files, as PEM | Ed25519, X25519, P-256, P-384, P-521, RSA, ML-KEM, ML-DSA, SLH-DSA |
 | `scytale sig sign` / `verify` | signatures | Ed25519, ECDSA, RSA-PSS, RSA PKCS#1 v1.5, ML-DSA, SLH-DSA |
 | `scytale kex agree` | a shared secret | X25519, ECDH |
 | `scytale kem encapsulate` / `decapsulate` | a shared secret carried in a ciphertext | ML-KEM |

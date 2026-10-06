@@ -2,7 +2,7 @@
 //! same secret, one that neither of them chose.
 //!
 //! [`x25519`] is the scheme to pick unless a protocol names another;
-//! [`ecdh`] over P-256 and P-384 covers the protocols and
+//! [`ecdh`] over P-256, P-384 and P-521 covers the protocols and
 //! certificates that ask for the NIST curves by name. When one side
 //! must instead pick the secret and encrypt it to the other, that is
 //! public-key

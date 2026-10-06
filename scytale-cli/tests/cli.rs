@@ -416,6 +416,7 @@ fn every_key_algorithm_signs_agrees_or_encapsulates() {
         ("ed25519", "ed25519"),
         ("ecdsa-p256", "ecdsa-sha256"),
         ("ecdsa-p384", "ecdsa-sha384"),
+        ("ecdsa-p521", "ecdsa-sha512"),
         ("rsa-1024", "rsa-pss-sha256"),
         ("ml-dsa-44", "ml-dsa-44"),
         ("slh-dsa-shake-128f", "slh-dsa-shake-128f"),
@@ -497,7 +498,7 @@ fn every_key_algorithm_signs_agrees_or_encapsulates() {
     ok(&verify, message);
 
     // Key agreement: both sides reach the same secret.
-    for alg in ["x25519", "ecdh-p256", "ecdh-p384"] {
+    for alg in ["x25519", "ecdh-p256", "ecdh-p384", "ecdh-p521"] {
         let a = d.join(format!("{alg}-a.pem"));
         let b = d.join(format!("{alg}-b.pem"));
         let (a, b) = (a.to_str().unwrap(), b.to_str().unwrap());
@@ -510,7 +511,11 @@ fn every_key_algorithm_signs_agrees_or_encapsulates() {
         let ab = ok(&["kex", "agree", alg, "-k", a, "-p", &b_pub], b"");
         let ba = ok(&["kex", "agree", alg, "-k", b, "-p", &a_pub], b"");
         assert_eq!(ab, ba, "{alg}");
-        let len = if alg == "ecdh-p384" { 96 } else { 64 };
+        let len = match alg {
+            "ecdh-p384" => 96,
+            "ecdh-p521" => 132,
+            _ => 64,
+        };
         assert_eq!(text(ab).len(), len);
     }
 
