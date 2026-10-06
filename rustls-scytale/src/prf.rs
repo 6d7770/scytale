@@ -1,7 +1,6 @@
 //! The TLS 1.2 PRF, from `scytale::kdf::tls12`.
 
 use alloc::boxed::Box;
-use alloc::string::ToString;
 use core::marker::PhantomData;
 
 use rustls::Error;
@@ -39,8 +38,8 @@ where
     ) -> Result<(), Error> {
         let secret = kx
             .complete_for_tls_version(peer_pub_key, ProtocolVersion::TLSv1_2)?;
-        tls12::prf::<H>(secret.secret_bytes(), label, &[seed], output)
-            .map_err(|e| Error::General(e.to_string()))
+        tls12::prf::<H>(secret.secret_bytes(), label, &[seed], output);
+        Ok(())
     }
 
     fn new_secret(&self, master_secret: &[u8; 48]) -> Box<dyn PrfSecret> {
@@ -68,14 +67,11 @@ where
         + Sync
         + 'static,
 {
+    /// rustls documents a label as always present, but its exporter
+    /// passes the application's through, which may be empty; the PRF
+    /// takes either.
     fn prf(&self, output: &mut [u8], label: &[u8], seed: &[u8]) {
-        // An empty output asks for nothing. rustls promises a label,
-        // and those two are all the PRF refuses.
-        if output.is_empty() {
-            return;
-        }
-        let derived = tls12::prf::<H>(&*self.secret, label, &[seed], output);
-        debug_assert!(derived.is_ok());
+        tls12::prf::<H>(&*self.secret, label, &[seed], output);
     }
 }
 
@@ -93,15 +89,20 @@ mod tests {
             .new_secret(&master)
             .prf(&mut a, b"key expansion", b"seed");
         let mut b = [0u8; 104];
-        tls12::prf::<Sha256>(&master, b"key expansion", &[b"seed"], &mut b)
-            .unwrap();
+        tls12::prf::<Sha256>(&master, b"key expansion", &[b"seed"], &mut b);
         assert_eq!(a, b);
         let mut c = [0u8; 104];
         PRF_SHA384
             .new_secret(&master)
             .prf(&mut c, b"key expansion", b"seed");
         assert_ne!(a, c);
-        // Nothing asked, nothing done.
+        // Nothing asked, nothing done; an empty label, as an exporter
+        // may pass, is the seed alone.
         PRF_SHA256.new_secret(&master).prf(&mut [], b"l", b"s");
+        let mut empty = [0u8; 32];
+        PRF_SHA256.new_secret(&master).prf(&mut empty, b"", b"ab");
+        let mut moved = [0u8; 32];
+        PRF_SHA256.new_secret(&master).prf(&mut moved, b"a", b"b");
+        assert_eq!(empty, moved);
     }
 }
