@@ -1,0 +1,63 @@
+#!/bin/sh
+# Makes the certificates and keys the handshake tests use, with
+# OpenSSL, so that every key and every signature in them comes from
+# an implementation other than the one under test. For each key type:
+# a CA, and one end-entity certificate under it for "localhost" that
+# serves as both server and client. Keys are kept in PKCS#8, and in
+# the bare form rustls also hands over: SEC 1 for the curves, PKCS#1
+# for RSA. Rerun to regenerate; the tests read whatever is here.
+#
+# Usage: tests/data/generate
+
+set -eu
+cd "$(dirname "$0")"
+
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+
+cat > "$work/ee.ext" <<'X'
+basicConstraints = critical, CA:false
+keyUsage = critical, digitalSignature
+extendedKeyUsage = serverAuth, clientAuth
+subjectAltName = DNS:localhost
+authorityKeyIdentifier = keyid
+X
+
+# name, genpkey arguments, signing digest (empty for Ed25519)
+make() {
+    name=$1 alg=$2 digest=$3
+    shift 3
+    mkdir -p "$name"
+    openssl genpkey -quiet -algorithm "$alg" "$@" -out "$work/ca.pem"
+    openssl genpkey -quiet -algorithm "$alg" "$@" -out "$work/ee.pem"
+    openssl req -new -x509 -key "$work/ca.pem" $digest -days 36500 \
+        -subj "/CN=scytale test CA $name" \
+        -addext "basicConstraints=critical,CA:true" \
+        -addext "keyUsage=critical,keyCertSign,cRLSign" \
+        -outform DER -out "$name/ca.der"
+    openssl req -new -key "$work/ee.pem" -subj "/CN=localhost" \
+        -out "$work/ee.csr"
+    openssl x509 -req -in "$work/ee.csr" -CA "$name/ca.der" -CAform DER \
+        -CAkey "$work/ca.pem" $digest -days 36500 -set_serial 2 \
+        -extfile "$work/ee.ext" -outform DER -out "$name/end.der" \
+        2>/dev/null
+    openssl pkcs8 -topk8 -nocrypt -in "$work/ee.pem" -outform DER \
+        -out "$name/end.pkcs8.der"
+}
+
+make rsa-2048 RSA -sha256 -pkeyopt rsa_keygen_bits:2048
+make rsa-3072 RSA -sha384 -pkeyopt rsa_keygen_bits:3072
+make rsa-4096 RSA -sha512 -pkeyopt rsa_keygen_bits:4096
+make ecdsa-p256 EC -sha256 -pkeyopt ec_paramgen_curve:P-256
+make ecdsa-p384 EC -sha384 -pkeyopt ec_paramgen_curve:P-384
+make ecdsa-p521 EC -sha512 -pkeyopt ec_paramgen_curve:P-521
+make ed25519 ED25519 ""
+
+for name in rsa-2048 rsa-3072 rsa-4096; do
+    openssl rsa -in "$name/end.pkcs8.der" -inform DER -traditional \
+        -outform DER -out "$name/end.pkcs1.der"
+done
+for name in ecdsa-p256 ecdsa-p384 ecdsa-p521; do
+    openssl ec -in "$name/end.pkcs8.der" -inform DER -outform DER \
+        -out "$name/end.sec1.der"
+done

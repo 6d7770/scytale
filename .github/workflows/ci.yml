@@ -334,7 +334,8 @@ jobs:
         # ring-tests holds ring's own files, under ring's rules, so
         # only the shim's sources are held to this repository's.
         run: |
-          long=$(find scytale scytale-cli scytale-ring/src -name '*.rs' \
+          long=$(find scytale scytale-cli scytale-ring/src rustls-scytale \
+              -name '*.rs' \
               -exec awk 'length > 80 {print FILENAME": "FNR}' {} +)
           if [ -n "$long" ]; then
               echo "lines over 80 columns:" >&2
@@ -345,7 +346,8 @@ jobs:
       - name: ASCII only
         run: |
           if grep -rnP --include='*.rs' '[^\x00-\x7F]' \
-              scytale/src scytale-cli/src scytale-ring/src; then
+              scytale/src scytale-cli/src scytale-ring/src \
+              rustls-scytale/src rustls-scytale/tests; then
               echo "non-ASCII characters found" >&2
               exit 1
           fi
