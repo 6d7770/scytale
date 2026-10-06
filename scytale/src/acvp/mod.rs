@@ -1282,6 +1282,17 @@ mod hkdf {
     }
 }
 
+/// The TLS 1.2 PRF, as RFC 7627's extended master secret and the key
+/// block.
+mod tls12 {
+    use super::*;
+
+    #[test]
+    fn acvp_tls12_kdf() {
+        support::acvp::tls12_kdf::run();
+    }
+}
+
 /// Every implementation this build holds, whether this processor
 /// can run it, and whether that is the right answer.
 ///

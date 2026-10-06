@@ -397,6 +397,30 @@ fn mac_and_kdf() {
         b"",
     ));
     assert_eq!(out, "ea6c014dc72d6f8ccd1ed92ace1d41f0d8de8957");
+    // The IETF TLS 1.2 PRF vector for SHA-256, with the seed in two
+    // parts.
+    let out = text(ok(
+        &[
+            "kdf",
+            "tls12",
+            "sha256",
+            "--secret",
+            "hex:9bbe436ba940f017b17652849a71db35",
+            "--label",
+            "str:test label",
+            "--seed",
+            "hex:a0ba9f936cda3118",
+            "--seed",
+            "hex:27a6f796ffd5198c",
+            "--length",
+            "32",
+        ],
+        b"",
+    ));
+    assert_eq!(
+        out,
+        "e3f229ba727be17b8d122620557cd453c2aab21d07c3d495329b52d4e61edb5a"
+    );
 }
 
 #[test]

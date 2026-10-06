@@ -299,6 +299,19 @@ PBKDF2 (RFC 8018) over *hash*: a key from a password, which is
 guessable, at a cost per guess set by the iteration count. The password
 and salt may be given as **str:**. Hex without a flag.
 
+## kdf tls12
+
+**scytale kdf tls12** *hash* **--secret ***value* **--label ***value*
+**--seed ***value***...** **-l ***bytes* \[**--hex**\|**--raw**\] \[*-o
+file*\]
+
+The TLS 1.2 PRF (RFC 5246) over *hash*, the cipher suite's: the master
+secret from the premaster secret, or the key block from the master
+secret, with the label the derivation names, such as **str:master
+secret** or **str:key expansion**, and the seed it names, such as the
+two randoms in order. **--seed** may repeat; the values are concatenated
+in order. The secret may not be given as **str:**. Hex without a flag.
+
 ## key generate
 
 **scytale key generate** *algorithm* \[*-o file*\]

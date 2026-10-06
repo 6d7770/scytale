@@ -394,7 +394,7 @@ pub static CIPHER: Family = Family {
 };
 
 static KDF_HASHES: [Entry; 11] =
-    over_hashes!("", Any, any, "hkdf or pbkdf2 over this hash");
+    over_hashes!("", Any, any, "hkdf, pbkdf2 or tls12 over this hash");
 
 pub static KDF: Family = Family {
     name: "kdf",

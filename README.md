@@ -131,7 +131,7 @@ The API documentation is on [docs.rs](https://docs.rs/scytale), and
 test vectors, against the NIST Automated Cryptographic Validation
 Program (ACVP) vectors, and against Project Wycheproof, whose cases
 are chosen to break implementations rather than to exercise them.
-The corpus is 119 files holding 88,084 cases, and every case this
+The corpus is 120 files holding 88,204 cases, and every case this
 build can run is run; the Monte Carlo groups chain a thousand cipher
 calls per case, with the key re-derived at each step. Every
 implementation is put through the whole vector set for its primitive,
@@ -180,7 +180,7 @@ the machinery behind it:
 | `cipher` | encryption | AES, ChaCha20, and the modes built on them |
 | `hash` | digests | SHA-2, SHA-3, SHAKE, cSHAKE; SHA-1 for what still names it |
 | `mac` | message authentication | HMAC, CMAC, KMAC, Poly1305 |
-| `kdf` | key derivation | HKDF, PBKDF2 |
+| `kdf` | key derivation | HKDF, PBKDF2, TLS 1.2 PRF |
 | `kem` | key encapsulation | ML-KEM-512, -768 and -1024 |
 | `kex` | key agreement | X25519, ECDH over P-256, P-384 and P-521 |
 | `pke` | public-key encryption | RSA-OAEP |
@@ -288,6 +288,7 @@ define them.
 | --- | --- |
 | HKDF (RFC 5869) | over any hash; from a secret that is already random |
 | PBKDF2 (SP 800-132) | over any hash; from a password |
+| TLS 1.2 PRF (RFC 5246) | over any hash; for implementations of that protocol |
 
 ### Key encapsulation, key agreement, public-key encryption and signatures
 

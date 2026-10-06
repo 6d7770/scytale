@@ -1,6 +1,6 @@
 [package]
 name = "scytale"
-description = "Correct, fast, portable no_std cryptography: AES, ChaCha20, SHA-2, SHA-3, HMAC, CMAC, KMAC, Poly1305, HKDF, PBKDF2, X25519, ECDH, RSA, ECDSA, Ed25519, ML-KEM, ML-DSA, SLH-DSA"
+description = "Correct, fast, portable no_std cryptography: AES, ChaCha20, SHA-2, SHA-3, HMAC, CMAC, KMAC, Poly1305, HKDF, PBKDF2, TLS 1.2 PRF, X25519, ECDH, RSA, ECDSA, Ed25519, ML-KEM, ML-DSA, SLH-DSA"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
