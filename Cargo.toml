@@ -5,6 +5,7 @@ members = [
     "scytale-cli",
     "scytale-ring",
     "scytale-ring/ring-tests",
+    "rustls-scytale",
 ]
 
 [workspace.package]
