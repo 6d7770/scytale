@@ -1,0 +1,341 @@
+diff --git a/bogo/Cargo.toml b/bogo/Cargo.toml
+index f45d0bd..d5a125c 100644
+--- a/bogo/Cargo.toml
++++ b/bogo/Cargo.toml
+@@ -11,6 +11,7 @@ nix = { version = "0.31", default-features = false, features = ["signal"] }
+ rustls = { path = "../rustls" }
+ rustls-aws-lc-rs = { path = "../rustls-aws-lc-rs" }
+ rustls-ring = { path = "../rustls-ring" }
++rustls-scytale = { path = "../../../../rustls-scytale" }
+ webpki = { workspace = true }
+ 
+ [features]
+diff --git a/bogo/config.json.in b/bogo/config.json.in
+index a12200e..23eb82d 100644
+--- a/bogo/config.json.in
++++ b/bogo/config.json.in
+@@ -109,8 +109,8 @@
+     "TwoMLKEMs": "we only include a share for the first configured group",
+     "VerifyPreferences-Enforced": "we validate but don't actually implement -verify-prefs",
+     "VerifyPreferences-NoCommonAlgorithms": "we validate but don't actually implement -verify-prefs",
+-#if defined(RING)
+-    "TLS-ECH-*": "*ring* has no HPKE provider for ECH",
++#if defined(RING) || defined(SCYTALE)
++    "TLS-ECH-*": "no HPKE provider for ECH",
+     "AllExtensions-Client-Permute-ECH-HelloRetryRequest-TLS-TLS13": "requires ECH",
+ #elif defined(AWS_LC_RS) && defined(FIPS)
+     "TLS-ECH-*": "ECH test suites use non-FIPS approved algos",
+@@ -128,14 +128,14 @@
+     "TLS-ECH-GREASE-Client-TLS12-RejectRetryConfigs": "we disable TLS1.2 w/ ECH",
+     "TLS-ECH-Server*": "ECH server support NYI",
+ #endif
+-#if defined(AWS_LC_RS)
++#if defined(AWS_LC_RS) || defined(SCYTALE)
+     "MLKEMKeyShareIncludedSecond-MLKEM1024": "we only include a share for the first configured group",
+     "MLKEMKeyShareIncludedThird-MLKEM1024": "we only include a share for the first configured group",
+     "NotJustMLKEMKeyShare-MLKEM1024": "we only include a share for the first configured group",
+ #else
+     "*MLKEM*": "not implemented",
+ #endif
+-#if defined(AWS_LC_RS)
++#if defined(AWS_LC_RS) || defined(SCYTALE)
+     "PostQuantumNotEnabledByDefaultForAServer": "it is",
+     "PostQuantumNotEnabledByDefaultInClients": "it is",
+ #endif
+diff --git a/bogo/runme b/bogo/runme
+index f0bba10..861b0e6 100755
+--- a/bogo/runme
++++ b/bogo/runme
+@@ -19,10 +19,14 @@ case ${BOGO_SHIM_PROVIDER:-aws-lc-rs} in
+       cpp -P -DAWS_LC_RS -DFIPS config.json.in > config.json
+       cargo run --features fips -- -print-rustls-provider
+       ;;
++  scytale)
++      cpp -P -DSCYTALE config.json.in > config.json
++      cargo run -- -print-rustls-provider
++      ;;
+   existing)
+       ;;
+   *)
+-      echo "unsupported BOGO_SHIM_PROVIDER: supported are (ring|aws-lc-rs|aws-lc-rs-fips|post-quantum|existing)"
++      echo "unsupported BOGO_SHIM_PROVIDER: supported are (ring|aws-lc-rs|aws-lc-rs-fips|scytale|post-quantum|existing)"
+       exit 1
+       ;;
+ esac
+diff --git a/bogo/src/main.rs b/bogo/src/main.rs
+index bf51041..3f518e5 100644
+--- a/bogo/src/main.rs
++++ b/bogo/src/main.rs
+@@ -1189,6 +1189,7 @@ enum SelectedProvider {
+     #[cfg_attr(not(feature = "fips"), allow(dead_code))]
+     AwsLcRsFips,
+     Ring,
++    Scytale,
+ }
+ 
+ impl SelectedProvider {
+@@ -1201,6 +1202,7 @@ impl SelectedProvider {
+             #[cfg(feature = "fips")]
+             Some("aws-lc-rs-fips") => Self::AwsLcRsFips,
+             Some("ring") => Self::Ring,
++            Some("scytale") => Self::Scytale,
+             Some(other) => panic!("unrecognized value for BOGO_SHIM_PROVIDER: {other:?}"),
+         }
+     }
+@@ -1221,13 +1223,21 @@ impl SelectedProvider {
+             }
+ 
+             Self::Ring => rustls_ring::DEFAULT_PROVIDER,
++
++            // Every suite and group, as for aws-lc-rs above.
++            Self::Scytale => CryptoProvider {
++                kx_groups: Cow::Borrowed(rustls_scytale::ALL_KX_GROUPS),
++                tls12_cipher_suites: Cow::Borrowed(rustls_scytale::ALL_TLS12_CIPHER_SUITES),
++                tls13_cipher_suites: Cow::Borrowed(rustls_scytale::ALL_TLS13_CIPHER_SUITES),
++                ..rustls_scytale::DEFAULT_PROVIDER
++            },
+         }
+     }
+ 
+     fn supports_ech(&self) -> bool {
+         match *self {
+             Self::AwsLcRs | Self::AwsLcRsFips => true,
+-            Self::Ring => false,
++            Self::Ring | Self::Scytale => false,
+         }
+     }
+ }
+diff --git a/rustls-test/Cargo.toml b/rustls-test/Cargo.toml
+index 066a4e9..b828897 100644
+--- a/rustls-test/Cargo.toml
++++ b/rustls-test/Cargo.toml
+@@ -11,12 +11,14 @@ brotli = ["rustls/brotli"]
+ fips = ["rustls-aws-lc-rs/fips"]
+ log = ["rustls/log", "rustls-util/log"]
+ ring = ["dep:rustls-ring"]
++scytale = ["dep:rustls-scytale"]
+ zlib = ["rustls/zlib"]
+ 
+ [dependencies]
+ rustls = { path = "../rustls", default-features = false, features = ["webpki"] }
+ rustls-aws-lc-rs = { path = "../rustls-aws-lc-rs", features = ["std"], optional = true }
+ rustls-ring = { path = "../rustls-ring", optional = true }
++rustls-scytale = { path = "../../../../rustls-scytale", optional = true }
+ rustls-util = { path = "../rustls-util", default-features = false }
+ 
+ [dev-dependencies]
+diff --git a/rustls-test/src/lib.rs b/rustls-test/src/lib.rs
+index 1c6bc8a..dfba241 100644
+--- a/rustls-test/src/lib.rs
++++ b/rustls-test/src/lib.rs
+@@ -2049,6 +2049,39 @@ pub mod macros {
+                 true
+             }
+             #[allow(dead_code)]
++            const fn provider_is_scytale() -> bool {
++                false
++            }
++            #[allow(dead_code)]
++            const fn provider_is_fips() -> bool {
++                false
++            }
++            #[allow(dead_code)]
++            const ALL_VERSIONS: [rustls::crypto::CryptoProvider; 2] = [
++                provider::DEFAULT_TLS12_PROVIDER,
++                provider::DEFAULT_TLS13_PROVIDER,
++            ];
++        };
++    }
++
++    #[macro_export]
++    macro_rules! provider_scytale {
++        () => {
++            #[allow(unused_imports)]
++            use rustls_scytale as provider;
++            #[allow(dead_code)]
++            const fn provider_is_aws_lc_rs() -> bool {
++                false
++            }
++            #[allow(dead_code)]
++            const fn provider_is_ring() -> bool {
++                false
++            }
++            #[allow(dead_code)]
++            const fn provider_is_scytale() -> bool {
++                true
++            }
++            #[allow(dead_code)]
+             const fn provider_is_fips() -> bool {
+                 false
+             }
+@@ -2074,6 +2107,10 @@ pub mod macros {
+                 false
+             }
+             #[allow(dead_code)]
++            const fn provider_is_scytale() -> bool {
++                false
++            }
++            #[allow(dead_code)]
+             const fn provider_is_fips() -> bool {
+                 cfg!(feature = "fips")
+             }
+diff --git a/rustls-test/tests/api.rs b/rustls-test/tests/api.rs
+index c76b693..5a6901d 100644
+--- a/rustls-test/tests/api.rs
++++ b/rustls-test/tests/api.rs
+@@ -72,6 +72,41 @@ mod tests_with_aws_lc_rs {
+     mod tests;
+ }
+ 
++#[cfg(feature = "scytale")]
++#[path = "."]
++mod tests_with_scytale {
++    use super::*;
++
++    rustls_test::provider_scytale!();
++
++    #[path = "api/client_cert_verifier.rs"]
++    mod client_cert_verifier;
++    #[path = "api/compress.rs"]
++    mod compress;
++    #[path = "api/crypto.rs"]
++    mod crypto;
++    #[path = "api/ffdhe.rs"]
++    mod ffdhe;
++    #[path = "api/io.rs"]
++    mod io;
++    #[path = "api/kx.rs"]
++    mod kx;
++    #[path = "api/quic.rs"]
++    mod quic;
++    #[path = "api/raw_keys.rs"]
++    mod raw_keys;
++    #[path = "api/resolve.rs"]
++    mod resolve;
++    #[path = "api/resume.rs"]
++    mod resume;
++    #[path = "api/server_cert_verifier.rs"]
++    mod server_cert_verifier;
++    #[path = "api/split.rs"]
++    mod split;
++    #[path = "api/api.rs"]
++    mod tests;
++}
++
+ // this must be outside tests_with_*, as we want
+ // one thread_local!, not one per provider.
+ thread_local!(static COUNTS: RefCell<LogCounts> = RefCell::new(LogCounts::new()));
+diff --git a/rustls-test/tests/api/api.rs b/rustls-test/tests/api/api.rs
+index 81bcb06..fa17ffb 100644
+--- a/rustls-test/tests/api/api.rs
++++ b/rustls-test/tests/api/api.rs
+@@ -43,6 +43,7 @@ use rustls_test::{
+ 
+ use super::{
+     ALL_VERSIONS, COUNTS, CountingLogger, provider, provider_is_aws_lc_rs, provider_is_fips,
++    provider_is_scytale,
+     provider_is_ring,
+ };
+ 
+@@ -1240,7 +1241,8 @@ fn negotiated_ciphersuite_server_ignoring_client_preference() {
+ }
+ 
+ fn expected_kx_for_version(version: ProtocolVersion) -> NamedGroup {
+-    match (version, provider_is_aws_lc_rs(), provider_is_fips()) {
++    let hybrid_first = provider_is_aws_lc_rs() || provider_is_scytale();
++    match (version, hybrid_first, provider_is_fips()) {
+         (ProtocolVersion::TLSv1_3, true, _) => NamedGroup::X25519MLKEM768,
+         (_, _, true) => NamedGroup::secp256r1,
+         (_, _, _) => NamedGroup::X25519,
+diff --git a/rustls-test/tests/api/resolve.rs b/rustls-test/tests/api/resolve.rs
+index 7ed18ed..7887a46 100644
+--- a/rustls-test/tests/api/resolve.rs
++++ b/rustls-test/tests/api/resolve.rs
+@@ -24,7 +24,7 @@ use rustls_test::{
+     provider_with_one_suite, server_name, transfer, webpki_client_verifier_builder,
+ };
+ 
+-use super::{ALL_VERSIONS, provider, provider_is_aws_lc_rs};
++use super::{ALL_VERSIONS, provider, provider_is_aws_lc_rs, provider_is_scytale};
+ 
+ #[test]
+ fn server_cert_resolve_with_sni() {
+@@ -240,7 +240,7 @@ fn server_cert_resolve_reduces_sigalgs_for_ecdsa_ciphersuite() {
+     check_sigalgs_reduced_by_ciphersuite(
+         KeyType::EcdsaP256,
+         CipherSuite::TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+-        if provider_is_aws_lc_rs() {
++        if provider_is_aws_lc_rs() || provider_is_scytale() {
+             vec![
+                 SignatureScheme::ECDSA_NISTP384_SHA384,
+                 SignatureScheme::ECDSA_NISTP256_SHA256,
+@@ -411,7 +411,7 @@ fn default_signature_schemes(version: ProtocolVersion) -> Vec<SignatureScheme> {
+         SignatureScheme::RSA_PSS_SHA256,
+     ]);
+ 
+-    if provider_is_aws_lc_rs() {
++    if provider_is_aws_lc_rs() || provider_is_scytale() {
+         v.insert(2, SignatureScheme::ECDSA_NISTP521_SHA512);
+     }
+ 
+diff --git a/rustls-test/tests/api/resume.rs b/rustls-test/tests/api/resume.rs
+index 9b8e6c8..1725718 100644
+--- a/rustls-test/tests/api/resume.rs
++++ b/rustls-test/tests/api/resume.rs
+@@ -205,7 +205,7 @@ fn resumption_combinations() {
+ fn expected_kx_for_version(version: ProtocolVersion) -> NamedGroup {
+     match (
+         version,
+-        super::provider_is_aws_lc_rs(),
++        super::provider_is_aws_lc_rs() || super::provider_is_scytale(),
+         super::provider_is_fips(),
+     ) {
+         (ProtocolVersion::TLSv1_3, true, _) => NamedGroup::X25519MLKEM768,
+diff --git a/rustls-test/tests/key_log_file_env.rs b/rustls-test/tests/key_log_file_env.rs
+index d8d76f0..acc32b4 100644
+--- a/rustls-test/tests/key_log_file_env.rs
++++ b/rustls-test/tests/key_log_file_env.rs
+@@ -25,6 +25,17 @@ mod tests_with_aws_lc_rs {
+     mod tests;
+ }
+ 
++#[cfg(feature = "scytale")]
++#[path = "."]
++mod tests_with_scytale {
++    use super::serialized;
++
++    rustls_test::provider_scytale!();
++
++    #[path = "key_log_file_env/tests.rs"]
++    mod tests;
++}
++
+ /// Approximates `#[serial]` from the `serial_test` crate.
+ ///
+ /// No attempt is made to recover from a poisoned mutex, which will
+diff --git a/rustls-test/tests/process_provider.rs b/rustls-test/tests/process_provider.rs
+index 226147e..3cae791 100644
+--- a/rustls-test/tests/process_provider.rs
++++ b/rustls-test/tests/process_provider.rs
+@@ -1,4 +1,4 @@
+-#![cfg(any(feature = "ring", feature = "aws-lc-rs"))]
++#![cfg(any(feature = "ring", feature = "aws-lc-rs", feature = "scytale"))]
+ 
+ //! Note that the default test runner builds each test file into a separate
+ //! executable, and runs tests in an indeterminate order.  That restricts us
+@@ -12,9 +12,14 @@ use rustls_aws_lc_rs as provider;
+ use rustls_ring as provider;
+ #[cfg(all(feature = "ring", feature = "aws-lc-rs"))]
+ use rustls_ring as provider;
++#[cfg(all(
++    feature = "scytale",
++    not(feature = "ring"),
++    not(feature = "aws-lc-rs")
++))]
++use rustls_scytale as provider;
+ use rustls_test::{ClientConfigExt, KeyType};
+ 
+-#[cfg(any(feature = "ring", feature = "aws-lc-rs"))]
+ #[test]
+ fn test_explicit_choice_required() {
+     assert!(CryptoProvider::get_default().is_none());

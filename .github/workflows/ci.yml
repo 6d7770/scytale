@@ -378,6 +378,28 @@ jobs:
       - name: Test
         run: scripts/test-ring-downstream
 
+  # rustls's own API suite and BoGo, BoringSSL's TLS test runner, with
+  # rustls-scytale as the provider. Neither is in the published
+  # crate, so the script clones rustls at the release's commit.
+  rustls-downstream:
+    name: test (rustls and BoGo on rustls-scytale)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust
+        run: |
+          rustup update --no-self-update stable
+          rustup default stable
+
+      - name: Install Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: stable
+
+      - name: Test
+        run: scripts/test-rustls-downstream
+
   # The published crate omits the vendored vectors, so check that it
   # still builds and that nothing else went missing.
   package:
