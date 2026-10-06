@@ -63,7 +63,7 @@ excluded.
 | POLYVAL (GCM-SIV) | over the GHASH multiply | same |
 | Poly1305, portable and x86-64 | limb arithmetic, final reduction chosen by mask | no branch or index on key or message |
 | SHA-1, SHA-2, SHA-3, SHAKE, cSHAKE | all backends | no data-dependent control flow; hashing a secret leaks only its length |
-| HMAC, HKDF, PBKDF2 | over the hashes | as the hash; `Mac::verify` compares with `constant_time::equal` |
+| HMAC, HKDF, PBKDF2, TLS 1.2 PRF | over the hashes | as the hash; `Mac::verify` compares with `constant_time::equal` |
 | KMAC | over cSHAKE | as the hash; `verify_tag`, `verify_bits` and `Mac::verify` compare with `constant_time::equal` |
 | CTR, CBC, CFB, OFB, XTS | over the cipher | as the cipher; the modes themselves have no padding |
 | PKCS#7 padding | `cipher/padding/pkcs7.rs` | `unpad` reads the whole last block and combines the checks by mask; one error for every failure, documented as the padding oracle it would be if shown to an attacker |

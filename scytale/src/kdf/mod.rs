@@ -5,7 +5,8 @@
 //! agreement, into as many keys as a protocol needs. [`pbkdf2`]
 //! turns a password, which is guessable, into a key, and its
 //! iteration count is there to make each guess cost the attacker
-//! what it costs you.
+//! what it costs you. [`tls12`] is the first job as TLS 1.2 defined
+//! it, for the implementations that still speak that version.
 //!
 //! ```
 //! use scytale::hash::sha2::Sha256;
@@ -35,3 +36,4 @@
 
 pub mod hkdf;
 pub mod pbkdf2;
+pub mod tls12;

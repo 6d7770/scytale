@@ -465,6 +465,30 @@ a key from a password, which is guessable, at a cost per guess set by
 the iteration count. The password and salt may be given as
 .BR str: .
 Hex without a flag.
+.SS kdf tls12
+.B scytale kdf tls12
+.I hash
+.BI \-\-secret\  value
+.BI \-\-label\  value
+.BI \-\-seed\  value ...
+.BI \-l\  bytes
+.RB [ \-\-hex | \-\-raw ]
+.RI [ "\-o file" ]
+.PP
+The TLS 1.2 PRF (RFC 5246) over
+.IR hash ,
+the cipher suite's: the master secret from the premaster secret, or
+the key block from the master secret, with the label the derivation
+names, such as
+.B "str:master secret"
+or
+.BR "str:key expansion" ,
+and the seed it names, such as the two randoms in order.
+.B \-\-seed
+may repeat; the values are concatenated in order. The secret may not
+be given as
+.BR str: .
+Hex without a flag.
 .SS key generate
 .B scytale key generate
 .I algorithm
