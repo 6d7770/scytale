@@ -2098,6 +2098,18 @@ macro_rules! key_types {
                 Ok((Self::from_secret(secret, public), form))
             }
 
+            /// A key from a bare `ECPrivateKey` (RFC 5915), the DER
+            /// inside an `EC PRIVATE KEY` PEM block, as
+            /// `openssl ec` writes it. The parameters, when
+            /// present, must name this curve, and a carried public
+            /// point is checked against the secret's own; the
+            /// errors are as for [`try_from_der`](Self::try_from_der).
+            pub fn try_from_sec1_der(der: &[u8]) -> Result<Self, Error> {
+                let e = Engine::new(&$constants);
+                let (secret, public) = Secret::from_sec1_der(&e, der)?;
+                Ok(Self::from_secret(secret, public))
+            }
+
             /// Writes the key as a `PrivateKeyInfo` into the front of
             /// `out`, returning the length, always [`DER_SIZE`]; a
             /// buffer too small gets [`Error::OutputTooSmall`]. The

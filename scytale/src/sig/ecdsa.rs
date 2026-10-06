@@ -216,6 +216,25 @@ mod tests {
         let sec1 = p256::PrivateKey::try_from_pem(P256_SEC1_PEM).unwrap();
         assert_eq!(sec1.secret_bytes(), key.secret_bytes());
 
+        // The bare ECPrivateKey DER loads directly; its parameters
+        // name P-256, so P-384 refuses it, and a PKCS#8 structure
+        // is not an ECPrivateKey at all.
+        let mut der = [0u8; 512];
+        let (_, n) =
+            crate::codec::pem::decode(P256_SEC1_PEM, &mut der).unwrap();
+        let sec1 = p256::PrivateKey::try_from_sec1_der(&der[..n]).unwrap();
+        assert_eq!(sec1.secret_bytes(), key.secret_bytes());
+        assert_eq!(sec1.public_key().sec1_bytes(), public.sec1_bytes());
+        assert!(matches!(
+            p384::PrivateKey::try_from_sec1_der(&der[..n]),
+            Err(Error::WrongAlgorithm)
+        ));
+        let (_, n) = crate::codec::pem::decode(P256_PEM, &mut der).unwrap();
+        assert!(matches!(
+            p256::PrivateKey::try_from_sec1_der(&der[..n]),
+            Err(Error::InvalidEncoding)
+        ));
+
         // Written back byte for byte, with the sizes the constants
         // promise.
         let mut out = [0u8; 512];
