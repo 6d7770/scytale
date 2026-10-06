@@ -12,7 +12,6 @@
 //! use scytale::hash::sha2::Sha256;
 //! use scytale::kdf::tls12;
 //!
-//! # fn main() -> Result<(), scytale::Error> {
 //! let premaster = [0x5a; 48];
 //! let client_random = [0x01; 32];
 //! let server_random = [0x02; 32];
@@ -25,16 +24,14 @@
 //!     b"master secret",
 //!     &[&client_random, &server_random],
 //!     &mut master,
-//! )?;
+//! );
 //! let mut key_block = [0u8; 104];
 //! tls12::prf::<Sha256>(
 //!     &master,
 //!     b"key expansion",
 //!     &[&server_random, &client_random],
 //!     &mut key_block,
-//! )?;
-//! # Ok(())
-//! # }
+//! );
 //! ```
 //!
 //! The hash is the cipher suite's: SHA-256 for every suite RFC 5246
@@ -42,10 +39,10 @@
 //! secret of RFC 7627 is the same call with the label `"extended
 //! master secret"` and the session hash as the seed.
 
+use crate::BlockType;
 use crate::hash::Hash;
 use crate::mac::Mac;
 use crate::mac::hmac::Hmac;
-use crate::{BlockType, Error};
 use zeroize::Zeroize;
 
 /// Fills `out` with `PRF(secret, label, seed)`.
@@ -53,18 +50,16 @@ use zeroize::Zeroize;
 /// `seed` is a list of parts, joined in the order given, so the two
 /// randoms or a label and a hash need no buffer to put them in.
 ///
-/// Returns [`Error::InvalidLength`] for an empty `label` or `out`:
-/// the function is defined on neither, and a caller that asks for
-/// nothing has lost track of what it is deriving.
+/// Nothing is refused. The label is only the first part of the seed
+/// `P_hash` reads, so an empty one is well defined, and RFC 5705's
+/// exporters pass the application's label through, which may be
+/// empty. The output may be any length, none included.
 pub fn prf<H: Hash + Clone + BlockType + Default>(
     secret: &[u8],
     label: &[u8],
     seed: &[&[u8]],
     out: &mut [u8],
-) -> Result<(), Error> {
-    if label.is_empty() || out.is_empty() {
-        return Err(Error::InvalidLength(out.len()));
-    }
+) {
     // A(0) = label || seed; A(i) = HMAC(secret, A(i-1)); and the
     // output is HMAC(secret, A(i) || label || seed) for i from 1.
     // Each `finalize` leaves the MAC keyed and ready for the next.
@@ -88,7 +83,6 @@ pub fn prf<H: Hash + Clone + BlockType + Default>(
     // The last A is one HMAC away from output the caller holds; it
     // does not linger here.
     a.as_mut().zeroize();
-    Ok(())
 }
 
 #[cfg(test)]
@@ -115,7 +109,7 @@ mod tests {
         let secret = hex::<16>("9bbe436ba940f017b17652849a71db35");
         let seed = hex::<16>("a0ba9f936cda311827a6f796ffd5198c");
         let mut out = [0u8; 100];
-        prf::<Sha256>(&secret, b"test label", &[&seed], &mut out).unwrap();
+        prf::<Sha256>(&secret, b"test label", &[&seed], &mut out);
         let want = hex::<100>(
             "e3f229ba727be17b8d122620557cd453c2aab21d07c3d495329b52d4e61edb5a\
              6b301791e90d35c9c9a46b4e14baf9af0fa022f7077def17abfd3797c0564bab\
@@ -131,7 +125,7 @@ mod tests {
         let secret = hex::<16>("b80b733d6ceefcdc71566ea48e5567df");
         let seed = hex::<16>("cd665cf6a8447dd6ff8b27555edb7465");
         let mut out = [0u8; 148];
-        prf::<Sha384>(&secret, b"test label", &[&seed], &mut out).unwrap();
+        prf::<Sha384>(&secret, b"test label", &[&seed], &mut out);
         let want = hex::<148>(
             "7b0c18e9ced410ed1804f2cfa34a336a1c14dffb4900bb5fd7942107e81c83cd\
              e9ca0faa60be9fe34f82b1233c9146a0e534cb400fed2700884f9dc236f80edd\
@@ -144,7 +138,7 @@ mod tests {
         let secret = hex::<16>("b0323523c1853599584d88568bbb05eb");
         let seed = hex::<16>("d4640e12e4bcdbfb437f03e6ae418ee5");
         let mut out = [0u8; 196];
-        prf::<Sha512>(&secret, b"test label", &[&seed], &mut out).unwrap();
+        prf::<Sha512>(&secret, b"test label", &[&seed], &mut out);
         let want = hex::<196>(
             "1261f588c798c5c201ff036e7a9cb5edcd7fe3f94c669a122a4638d7d508b283\
              042df6789875c7147e906d868bc75c45e20eb40c1cf4a1713b27371f68432592\
@@ -162,27 +156,28 @@ mod tests {
     fn seed_parts_join_and_lengths_vary() {
         let secret = [7u8; 32];
         let mut whole = [0u8; 70];
-        prf::<Sha256>(&secret, b"l", &[b"abcdef"], &mut whole).unwrap();
+        prf::<Sha256>(&secret, b"l", &[b"abcdef"], &mut whole);
         let mut parts = [0u8; 70];
-        prf::<Sha256>(&secret, b"l", &[b"ab", b"", b"cdef"], &mut parts)
-            .unwrap();
+        prf::<Sha256>(&secret, b"l", &[b"ab", b"", b"cdef"], &mut parts);
         assert_eq!(whole, parts);
         // A prefix of the output is the same whatever the length asked.
         let mut short = [0u8; 33];
-        prf::<Sha256>(&secret, b"l", &[b"abcdef"], &mut short).unwrap();
+        prf::<Sha256>(&secret, b"l", &[b"abcdef"], &mut short);
         assert_eq!(short[..], whole[..33]);
     }
 
+    /// An empty label is the seed alone: the label is only where
+    /// `P_hash`'s seed starts. An exporter passes the application's
+    /// label through, and it may be empty. No output is no work.
     #[test]
-    fn empty_label_or_output_is_refused() {
-        let mut out = [0u8; 8];
-        assert_eq!(
-            prf::<Sha256>(&[1], b"", &[b"s"], &mut out),
-            Err(Error::InvalidLength(8))
-        );
-        assert_eq!(
-            prf::<Sha256>(&[1], b"l", &[b"s"], &mut []),
-            Err(Error::InvalidLength(0))
-        );
+    fn empty_label_and_output() {
+        let secret = [3u8; 48];
+        let mut empty = [0u8; 40];
+        prf::<Sha256>(&secret, b"", &[b"abc"], &mut empty);
+        let mut moved = [0u8; 40];
+        prf::<Sha256>(&secret, b"a", &[b"bc"], &mut moved);
+        assert_eq!(empty, moved);
+        assert_ne!(empty, [0u8; 40]);
+        prf::<Sha256>(&secret, b"", &[], &mut []);
     }
 }

@@ -53,8 +53,7 @@ fn case<H: Hash + Clone + BlockType + Default>(
         b"extended master secret",
         &[&session_hash],
         &mut master,
-    )
-    .expect("master secret");
+    );
     assert_eq!(master, hex(&t["masterSecret"]), "{tag}");
 
     let server_random = hex(&t["serverRandom"]);
@@ -65,7 +64,6 @@ fn case<H: Hash + Clone + BlockType + Default>(
         b"key expansion",
         &[&server_random, &client_random],
         &mut key_block,
-    )
-    .expect("key block");
+    );
     assert_eq!(key_block, hex(&t["keyBlock"]), "{tag}");
 }
