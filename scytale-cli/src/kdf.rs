@@ -160,9 +160,6 @@ pub fn run(op: KdfOp) -> Result<()> {
             let hash = names::KDF.find(&args.hash)?.name;
             let secret = value::parse(&args.secret, "--secret", false)?;
             let label = value::parse(&args.label, "--label", true)?;
-            if label.is_empty() {
-                return Err(usage!("--label: the PRF needs a label"));
-            }
             if args.length == 0 {
                 return Err(usage!("--length 0 would derive nothing"));
             }
@@ -174,7 +171,8 @@ pub fn run(op: KdfOp) -> Result<()> {
             let seed: Vec<&[u8]> = seed.iter().map(|s| &s[..]).collect();
             let mut out_bytes = Zeroizing::new(vec![0u8; args.length]);
             with_hash!(hash, H => {
-                Ok(tls12::prf::<H>(&secret, &label, &seed, &mut out_bytes)?)
+                tls12::prf::<H>(&secret, &label, &seed, &mut out_bytes);
+                Ok(())
             })?;
             let mut out = io::output(args.out.as_deref(), true)?;
             io::write(&mut *out, &out_bytes, args.format.as_hex(true))
