@@ -529,9 +529,11 @@ pub(crate) fn write_pkcs8_with(
 }
 
 /// Which forms of a private key a PKCS#8 carried, for the
-/// post-quantum schemes whose keys the IETF LAMPS profiles write as
-/// a CHOICE: `[0]` the seed alone, an OCTET STRING the expanded key
-/// alone, or a SEQUENCE of both.
+/// post-quantum schemes whose keys RFC 9881 (ML-DSA) and RFC 9935
+/// (ML-KEM) write as a CHOICE: `[0]` the seed alone, an OCTET STRING
+/// the expanded key alone, or a SEQUENCE of both, in which the seed
+/// is a plain OCTET STRING. Drafts before the RFCs tagged that seed
+/// `[0]` too; that form is refused.
 pub(crate) struct SeedOrExpanded<'a> {
     pub(crate) seed: Option<&'a [u8]>,
     pub(crate) expanded: Option<&'a [u8]>,
@@ -547,7 +549,7 @@ pub(crate) fn read_seed_or_expanded(
             expanded: None,
         }
     } else if let Some(mut both) = outer.optional_sequence()? {
-        let seed = both.element(context_primitive(0))?;
+        let seed = both.octet_string()?;
         let expanded = both.octet_string()?;
         both.end()?;
         SeedOrExpanded {
