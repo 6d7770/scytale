@@ -39,6 +39,9 @@
 //! - QUIC: packet and header protection for every TLS 1.3 suite.
 //! - Session tickets: ChaCha20-Poly1305, the key rotated every six
 //!   hours.
+//! - HPKE, for Encrypted Client Hello: DHKEM over X25519, P-256,
+//!   P-384 and P-521, each with its own hash and any of the three
+//!   AEADs, in [`hpke`].
 //!
 //! Everything is a call into scytale; this crate holds only what
 //! rustls asks of a provider: the record layouts, the lists, and the
@@ -65,6 +68,7 @@ use rustls::{Tls12CipherSuite, Tls13CipherSuite};
 mod aead;
 mod hash;
 mod hkdf;
+pub mod hpke;
 mod kx;
 mod prf;
 mod quic;

@@ -1,8 +1,10 @@
 #!/bin/sh
 # Runs rustls's own tests with rustls-scytale as the provider: the
-# API suite, twelve thousand lines of it, and BoGo, BoringSSL's TLS
-# test runner, which rustls gates its own providers on and which is
-# the check against an implementation other than rustls. rustls's
+# API suite, twelve thousand lines of it; the HPKE test, against the
+# RFC 9180 vectors and against aws-lc-rs's HPKE in both directions;
+# and BoGo, BoringSSL's TLS test runner, which rustls gates its own
+# providers on and which is the check against an implementation
+# other than rustls, Encrypted Client Hello included. rustls's
 # tests are not in the published crate, so rustls is cloned at the
 # commit the release was cut from, into target/rustls-downstream,
 # refreshed each run.
@@ -53,6 +55,9 @@ then
 fi
 
 cargo test -p rustls-test --no-default-features --features "$features"
+
+# aws-lc-rs is in this one on purpose: it is the other side.
+cargo test -p rustls-provider-test
 
 command -v go > /dev/null || {
     echo "BoGo needs Go on the path" >&2
