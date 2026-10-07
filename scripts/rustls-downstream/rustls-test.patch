@@ -11,20 +11,9 @@ index f45d0bd..d5a125c 100644
  
  [features]
 diff --git a/bogo/config.json.in b/bogo/config.json.in
-index a12200e..23eb82d 100644
+index a12200e..ab6169b 100644
 --- a/bogo/config.json.in
 +++ b/bogo/config.json.in
-@@ -109,8 +109,8 @@
-     "TwoMLKEMs": "we only include a share for the first configured group",
-     "VerifyPreferences-Enforced": "we validate but don't actually implement -verify-prefs",
-     "VerifyPreferences-NoCommonAlgorithms": "we validate but don't actually implement -verify-prefs",
--#if defined(RING)
--    "TLS-ECH-*": "*ring* has no HPKE provider for ECH",
-+#if defined(RING) || defined(SCYTALE)
-+    "TLS-ECH-*": "no HPKE provider for ECH",
-     "AllExtensions-Client-Permute-ECH-HelloRetryRequest-TLS-TLS13": "requires ECH",
- #elif defined(AWS_LC_RS) && defined(FIPS)
-     "TLS-ECH-*": "ECH test suites use non-FIPS approved algos",
 @@ -128,14 +128,14 @@
      "TLS-ECH-GREASE-Client-TLS12-RejectRetryConfigs": "we disable TLS1.2 w/ ECH",
      "TLS-ECH-Server*": "ECH server support NYI",
@@ -63,7 +52,7 @@ index f0bba10..861b0e6 100755
        ;;
  esac
 diff --git a/bogo/src/main.rs b/bogo/src/main.rs
-index bf51041..3f518e5 100644
+index bf51041..6064ffa 100644
 --- a/bogo/src/main.rs
 +++ b/bogo/src/main.rs
 @@ -1189,6 +1189,7 @@ enum SelectedProvider {
@@ -82,7 +71,7 @@ index bf51041..3f518e5 100644
              Some(other) => panic!("unrecognized value for BOGO_SHIM_PROVIDER: {other:?}"),
          }
      }
-@@ -1221,13 +1223,21 @@ impl SelectedProvider {
+@@ -1221,15 +1223,37 @@ impl SelectedProvider {
              }
  
              Self::Ring => rustls_ring::DEFAULT_PROVIDER,
@@ -99,12 +88,117 @@ index bf51041..3f518e5 100644
  
      fn supports_ech(&self) -> bool {
          match *self {
-             Self::AwsLcRs | Self::AwsLcRsFips => true,
--            Self::Ring => false,
-+            Self::Ring | Self::Scytale => false,
+-            Self::AwsLcRs | Self::AwsLcRsFips => true,
++            Self::AwsLcRs | Self::AwsLcRsFips | Self::Scytale => true,
+             Self::Ring => false,
          }
      }
++
++    fn hpke_suites(&self) -> &'static [&'static dyn Hpke] {
++        match *self {
++            Self::Scytale => rustls_scytale::hpke::ALL_SUPPORTED_SUITES,
++            _ => ALL_HPKE_SUITES,
++        }
++    }
++
++    fn grease_hpke_suite(&self) -> &'static dyn Hpke {
++        match *self {
++            Self::Scytale => rustls_scytale::hpke::DH_KEM_X25519_HKDF_SHA256_AES_128,
++            _ => GREASE_HPKE_SUITE,
++        }
++    }
  }
+ 
+ fn load_root_certs(filename: &str) -> Arc<RootCertStore> {
+@@ -1815,14 +1839,15 @@ fn make_client_cfg(opts: &Options, key_log: &Arc<KeyLogMemo>) -> Arc<ClientConfi
+         );
+ 
+         if let Some(ech_config_list) = &opts.ech_config_list {
+-            let ech_mode: EchMode = EchConfig::new(ech_config_list.clone(), ALL_HPKE_SUITES)
++            let suites = opts.selected_provider.hpke_suites();
++            let ech_mode: EchMode = EchConfig::new(ech_config_list.clone(), suites)
+                 .unwrap_or_else(|_| quit(":INVALID_ECH_CONFIG_LIST:"))
+                 .into();
+ 
+             ech_cfg.with_ech(ech_mode)
+         } else if opts.enable_ech_grease {
+             let ech_mode = EchMode::Grease(EchGreaseConfig::new(
+-                GREASE_HPKE_SUITE,
++                opts.selected_provider.grease_hpke_suite(),
+                 HpkePublicKey(GREASE_25519_PUBKEY.to_vec()),
+             ));
+ 
+diff --git a/rustls-provider-test/Cargo.toml b/rustls-provider-test/Cargo.toml
+index c7d9c7d..fb9d5fb 100644
+--- a/rustls-provider-test/Cargo.toml
++++ b/rustls-provider-test/Cargo.toml
+@@ -10,6 +10,7 @@ publish = false
+ hex = "0.4"
+ rustls = { version = "0.24.0-dev.1", features = ["log"], path = "../rustls" }
+ rustls-aws-lc-rs = { path = "../rustls-aws-lc-rs" }
++rustls-scytale = { path = "../../../../rustls-scytale" }
+ serde = { version = "1", features = ["derive"] }
+ serde_json = "1"
+ 
+diff --git a/rustls-provider-test/tests/hpke.rs b/rustls-provider-test/tests/hpke.rs
+index 3cbd47e..878ed6d 100644
+--- a/rustls-provider-test/tests/hpke.rs
++++ b/rustls-provider-test/tests/hpke.rs
+@@ -40,6 +40,29 @@ fn check_test_vectors() {
+     }
+ }
+ 
++/// Every suite rustls-scytale has, P-384 and SHA-384 included, which
++/// the vectors above do not cover: each provider's keys, sealed by
++/// one and opened by the other.
++#[test]
++fn scytale_and_aws_lc_rs_agree() {
++    let mut checked = 0;
++    for ours in rustls_scytale::hpke::ALL_SUPPORTED_SUITES {
++        let Some(theirs) =
++            TestVector::lookup_suite(ours.suite(), rustls_aws_lc_rs::hpke::ALL_SUPPORTED_SUITES)
++        else {
++            continue;
++        };
++        for (keys, sealer, opener) in [(*ours, *ours, theirs), (theirs, theirs, *ours), (*ours, theirs, *ours), (theirs, *ours, theirs)] {
++            let (public, secret) = keys.generate_key_pair().unwrap();
++            let (enc, ct) = sealer.seal(b"info", b"aad", b"message", &public).unwrap();
++            let pt = opener.open(&enc, b"info", b"aad", &ct, &secret).unwrap();
++            assert_eq!(pt, b"message", "{:?}", ours.suite());
++        }
++        checked += 1;
++    }
++    assert_eq!(checked, 12);
++}
++
+ #[derive(Deserialize, Debug)]
+ struct TestVector {
+     mode: u8,
+@@ -77,11 +100,20 @@ impl TestVector {
+             return None;
+         }
+ 
+-        match Self::lookup_suite(self.suite(), rustls_aws_lc_rs::hpke::ALL_SUPPORTED_SUITES) {
+-            // aws-lc-rs supported the suite, test against itself
+-            Some(aws_suite) => Some(vec![(aws_suite, aws_suite)]),
++        let aws = Self::lookup_suite(self.suite(), rustls_aws_lc_rs::hpke::ALL_SUPPORTED_SUITES);
++        let scytale = Self::lookup_suite(self.suite(), rustls_scytale::hpke::ALL_SUPPORTED_SUITES);
++        match (aws, scytale) {
++            // Each against itself, and each against the other.
++            (Some(aws), Some(scytale)) => Some(vec![
++                (aws, aws),
++                (scytale, scytale),
++                (aws, scytale),
++                (scytale, aws),
++            ]),
++            (Some(aws_suite), None) => Some(vec![(aws_suite, aws_suite)]),
++            (None, Some(scytale)) => Some(vec![(scytale, scytale)]),
+             // Neither provider supported the suite - nothing to do.
+-            None => None,
++            (None, None) => None,
+         }
+     }
+ 
 diff --git a/rustls-test/Cargo.toml b/rustls-test/Cargo.toml
 index 066a4e9..b828897 100644
 --- a/rustls-test/Cargo.toml
