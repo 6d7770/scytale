@@ -128,6 +128,58 @@ index bf51041..6064ffa 100644
                  HpkePublicKey(GREASE_25519_PUBKEY.to_vec()),
              ));
  
+diff --git a/rustls-bench/Cargo.toml b/rustls-bench/Cargo.toml
+index f21627e..d84b612 100644
+--- a/rustls-bench/Cargo.toml
++++ b/rustls-bench/Cargo.toml
+@@ -9,6 +9,7 @@ clap = { workspace = true }
+ rustls = { path = "../rustls" }
+ rustls-aws-lc-rs = { path = "../rustls-aws-lc-rs", optional = true }
+ rustls-ring = { path = "../rustls-ring", optional = true }
++rustls-scytale = { path = "../../../../rustls-scytale", optional = true }
+ rustls-graviola = { workspace = true, optional = true }
+ rustls-test = { workspace = true, default-features = false }
+ 
+@@ -18,6 +19,7 @@ aws-lc-rs = ["rustls-aws-lc-rs"]
+ fips = ["rustls-aws-lc-rs/fips", "aws-lc-rs"]
+ graviola = ["dep:rustls-graviola"]
+ ring = ["dep:rustls-ring"]
++scytale = ["dep:rustls-scytale"]
+ 
+ [target.'cfg(not(target_env = "msvc"))'.dependencies]
+ tikv-jemallocator = { workspace = true }
+diff --git a/rustls-bench/src/main.rs b/rustls-bench/src/main.rs
+index 83e7b0a..8031cb4 100644
+--- a/rustls-bench/src/main.rs
++++ b/rustls-bench/src/main.rs
+@@ -876,6 +876,8 @@ enum Provider {
+     Graviola,
+     #[cfg(feature = "ring")]
+     Ring,
++    #[cfg(feature = "scytale")]
++    Scytale,
+     #[value(skip)]
+     _None, // prevents this enum being uninhabited when built with no features
+ }
+@@ -891,6 +893,8 @@ impl Provider {
+             Self::Graviola => rustls_graviola::default_provider(),
+             #[cfg(feature = "ring")]
+             Self::Ring => rustls_ring::DEFAULT_PROVIDER,
++            #[cfg(feature = "scytale")]
++            Self::Scytale => rustls_scytale::DEFAULT_PROVIDER,
+             Self::_None => unreachable!(),
+         }
+     }
+@@ -939,6 +943,9 @@ impl Provider {
+         #[cfg(feature = "ring")]
+         available.push(Self::Ring);
+ 
++        #[cfg(feature = "scytale")]
++        available.push(Self::Scytale);
++
+         match available[..] {
+             [] => panic!("no providers available in this build"),
+             [one] => one,
 diff --git a/rustls-provider-test/Cargo.toml b/rustls-provider-test/Cargo.toml
 index c7d9c7d..fb9d5fb 100644
 --- a/rustls-provider-test/Cargo.toml

@@ -21,6 +21,16 @@
 # BoGo needs Go, a C compiler and cpp: the shim links all three
 # providers, though it runs only the one selected.
 #
+# The patch also gives rustls's benchmark tool a scytale provider,
+# which this script builds nothing of and runs nothing with. To time
+# the provider with rustls's own harness, after a run:
+#
+#   cd target/rustls-downstream/rustls
+#   cargo run --release -p rustls-bench --no-default-features \
+#       --features scytale -- bulk
+#
+# and the same with --features ring or aws-lc-rs to compare.
+#
 # Usage: scripts/test-rustls-downstream
 
 set -eu

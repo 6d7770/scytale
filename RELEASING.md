@@ -1,9 +1,9 @@
 # Releasing
 
-The three crates, `scytale`, `scytale-ring` and `scytale-cli`, share
-one version and go out together. A release is one commit that bumps
-the version, one tag, and three `cargo publish` calls in dependency
-order. The version changes only here, at release; a feature or an API
+The four crates, `scytale`, `scytale-ring`, `rustls-scytale` and
+`scytale-cli`, share one version and go out together. A release is
+one commit that bumps the version, one tag, and four `cargo publish`
+calls in dependency order. The version changes only here, at release; a feature or an API
 change does not carry a bump with it.
 
 ## 1. Decide the version
@@ -14,20 +14,28 @@ change does not carry a bump with it.
   break.
 - Only fixes: bump the patch.
 
-The shim and the tool depend on the library by `version = "0.N"`, so
-a minor bump is what lets them reach a new library API; a patch bump
-needs no change there.
+The shim, the provider and the tool depend on the library by
+`version = "0.N"`, so a minor bump is what lets them reach a new
+library API; a patch bump needs no change there.
+
+`rustls-scytale` goes out only while its `rustls` dependency is a
+release: it is pinned exactly to `=0.24.0-dev.1` now, and each
+development release of rustls may change the provider traits. Until
+rustls 0.24.0, leave it out of the publish in step 6.
 
 ## 2. Bump every place the version lives
 
 - `Cargo.toml` (workspace): `version`.
-- `scytale-ring/Cargo.toml` and `scytale-cli/Cargo.toml`: the
-  `version` in their `scytale = { path = ..., version = "0.N" }`
-  lines, on a minor bump.
+- `scytale-ring/Cargo.toml`, `rustls-scytale/Cargo.toml` and
+  `scytale-cli/Cargo.toml`: the `version` in their
+  `scytale = { path = ..., version = "0.N" }` lines, on a minor bump.
 - `README.md` and `scytale-ring/README.md`: the `ring = { package =
   "scytale-ring", version = "0.N" }` example lines, and the "Which
   ring" table in the shim's README, which gains a row when the ring
   API it presents changes and otherwise has its versions checked.
+- `README.md` and `rustls-scytale/README.md`: the
+  `rustls-scytale = "0.N"` lines, and the "Which rustls" table in the
+  provider's README, kept the same way.
 - `scytale-cli/scytale.1`: the `.TH` line's date and `scytale 0.N`.
   `cargo test -p scytale-cli` fails if this is missed. Then
   `scripts/man-md` to regenerate `scytale.1.md`.
@@ -62,7 +70,10 @@ scripts/ci-check                 # the style job, as CI runs it
 cargo test-extended              # every test, ignored ones included
 scripts/test-all-arches          # the foreign architectures under cross
 scripts/test-ring-downstream     # rustls and webpki on scytale-ring
+scripts/test-rustls-downstream   # rustls's tests and BoGo on the provider
 ```
+
+The last needs Go, a C compiler and `cpp` for BoGo.
 
 and the CI jobs that `test-extended` does not cover on the host:
 
@@ -86,6 +97,7 @@ resolves the dependency there.
 ```sh
 cargo publish --dry-run -p scytale
 cargo package -p scytale-ring --list
+cargo package -p rustls-scytale --list
 cargo package -p scytale-cli --list
 ```
 
@@ -108,13 +120,14 @@ Wait for CI on the tag to pass on every job before publishing;
 ```sh
 cargo publish -p scytale
 cargo publish -p scytale-ring
+cargo publish -p rustls-scytale
 cargo publish -p scytale-cli
 ```
 
 Each waits on the one before: crates.io must have the library before
-the shim's and the tool's verify builds can resolve it. A failed
-publish of the second or third is redone once the first is visible;
-nothing needs unpublishing.
+the shim's, the provider's and the tool's verify builds can resolve
+it. A failed publish after the first is redone once the first is
+visible; nothing needs unpublishing.
 
 ## 7. Afterwards
 
