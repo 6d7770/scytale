@@ -1,9 +1,11 @@
 //! Public-key encryption: anyone can encrypt to a public key, and
 //! only the holder of the private key can read the result.
 //!
-//! The one scheme here is [`rsa`], with OAEP padding. It is for
-//! moving keys, not data: a message must fit inside one modulus, so
-//! encrypt a symmetric key and let a cipher carry the rest. When both
+//! [`hpke`] (RFC 9180) is the scheme to pick: it encapsulates a
+//! fresh secret to the recipient's key and encrypts any amount of
+//! data under it. [`rsa`], with OAEP padding, is for the formats that
+//! name it; it moves keys, not data, since a message must fit inside
+//! one modulus. When both
 //! parties are present to contribute a key pair, key agreement under
 //! [`kex`](crate::kex) is the better default; public-key encryption
 //! is for the recipient who is not online, or the format that asks
@@ -32,4 +34,5 @@
 //! # }
 //! ```
 
+pub mod hpke;
 pub mod rsa;

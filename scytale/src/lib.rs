@@ -17,7 +17,7 @@
 //! | [`kdf`] | HKDF, PBKDF2 and the TLS 1.2 PRF |
 //! | [`kem`] | ML-KEM key encapsulation |
 //! | [`kex`] | X25519 and ECDH key agreement |
-//! | [`pke`] | RSA-OAEP public-key encryption |
+//! | [`pke`] | HPKE and RSA-OAEP public-key encryption |
 //! | [`random`] | a CTR_DRBG generator and the entropy that seeds it |
 //! | [`constant_time`] | comparing secrets without timing them |
 //! | [`codec`] | hex, base64 and PEM, in constant time |

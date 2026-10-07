@@ -10,5 +10,6 @@
 use std::{eprintln, format, println, string::String, vec, vec::Vec};
 
 pub mod acvp;
+pub mod cfrg;
 pub mod vectors;
 pub mod wycheproof;

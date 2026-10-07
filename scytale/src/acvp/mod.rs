@@ -1129,6 +1129,11 @@ mod pke {
     use super::*;
 
     #[test]
+    fn cfrg_hpke() {
+        support::cfrg::run();
+    }
+
+    #[test]
     fn acvp_kts_ifc() {
         support::acvp::kts_ifc::run();
     }
