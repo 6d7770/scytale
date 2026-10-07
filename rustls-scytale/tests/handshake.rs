@@ -21,7 +21,7 @@ use rustls::{
 use rustls_scytale as provider;
 
 /// The key types, by their directory under `tests/data`.
-const KEY_TYPES: [&str; 7] = [
+const KEY_TYPES: [&str; 10] = [
     "ecdsa-p256",
     "ecdsa-p384",
     "ecdsa-p521",
@@ -29,7 +29,15 @@ const KEY_TYPES: [&str; 7] = [
     "rsa-2048",
     "rsa-3072",
     "rsa-4096",
+    "ml-dsa-44",
+    "ml-dsa-65",
+    "ml-dsa-87",
 ];
+
+/// ML-DSA is defined for TLS 1.3 only (draft-ietf-tls-mldsa).
+fn tls13_only(dir: &str) -> bool {
+    dir.starts_with("ml-dsa")
+}
 
 fn read(dir: &str, file: &str) -> Vec<u8> {
     let path =
@@ -197,13 +205,14 @@ fn all_suites() -> Vec<SupportedCipherSuite> {
     tls13.chain(tls12).collect()
 }
 
-/// Whether a key type can sign for a TLS 1.2 suite: ECDHE_RSA
-/// suites take RSA keys, ECDHE_ECDSA suites the rest.
+/// Whether a key type can sign for a suite: in TLS 1.2, ECDHE_RSA
+/// suites take RSA keys and ECDHE_ECDSA suites the curves; TLS 1.3
+/// suites take any.
 fn fits(suite: SupportedCipherSuite, dir: &str) -> bool {
     match suite {
         SupportedCipherSuite::Tls12(s) => {
             let rsa_suite = format!("{:?}", s.common.suite).contains("_RSA_");
-            rsa_suite == dir.starts_with("rsa")
+            !tls13_only(dir) && rsa_suite == dir.starts_with("rsa")
         }
         _ => true,
     }
@@ -298,8 +307,12 @@ fn client_authentication_with_every_key_form() {
         provider::DEFAULT_TLS13_PROVIDER,
         provider::DEFAULT_TLS12_PROVIDER,
     ] {
+        let tls12 = base.tls13_cipher_suites.is_empty();
         let provider = Arc::new(base);
         for dir in KEY_TYPES {
+            if tls12 && tls13_only(dir) {
+                continue;
+            }
             for key in keys(dir) {
                 let server = Arc::new(server_config(&provider, dir, true));
                 let client = ClientConfig::builder(provider.clone())

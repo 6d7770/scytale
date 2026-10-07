@@ -12,7 +12,7 @@ use pki_types::{PrivateKeyDer, SubjectPublicKeyInfoDer};
 use rustls::Error;
 use rustls::crypto::{KeyProvider, SignatureScheme, Signer, SigningKey};
 use scytale::hash::sha2::{Sha256, Sha384, Sha512};
-use scytale::sig::{ecdsa, ed25519, rsa};
+use scytale::sig::{ecdsa, ed25519, ml_dsa, rsa};
 use scytale::{Algorithm, KeyInfo};
 
 use crate::random::generator;
@@ -91,6 +91,15 @@ fn pkcs8(der: &[u8]) -> Result<Key, Error> {
         Algorithm::Ed25519 => ed25519::PrivateKey::try_from_der(der)
             .map_err(load)
             .map(Key::ed25519),
+        Algorithm::MlDsa44 => ml_dsa::ml_dsa_44::PrivateKey::try_from_der(der)
+            .map_err(load)
+            .and_then(Key::ml_dsa_44),
+        Algorithm::MlDsa65 => ml_dsa::ml_dsa_65::PrivateKey::try_from_der(der)
+            .map_err(load)
+            .and_then(Key::ml_dsa_65),
+        Algorithm::MlDsa87 => ml_dsa::ml_dsa_87::PrivateKey::try_from_der(der)
+            .map_err(load)
+            .and_then(Key::ml_dsa_87),
         _ => Err(refused(what, "not a signature algorithm TLS uses here")),
     }
 }
@@ -124,6 +133,9 @@ enum Secret {
     P384(Arc<ecdsa::p384::PrivateKey>),
     P521(Arc<ecdsa::p521::PrivateKey>),
     Ed25519(Arc<ed25519::PrivateKey>),
+    MlDsa44(Arc<ml_dsa::ml_dsa_44::PrivateKey>),
+    MlDsa65(Arc<ml_dsa::ml_dsa_65::PrivateKey>),
+    MlDsa87(Arc<ml_dsa::ml_dsa_87::PrivateKey>),
 }
 
 /// The SPKI scytale writes, into a vector of the length it reports.
@@ -194,6 +206,39 @@ impl Key {
         }
     }
 
+    fn ml_dsa_44(key: ml_dsa::ml_dsa_44::PrivateKey) -> Result<Self, Error> {
+        let spki = spki(
+            |o| key.public_key().der_bytes(o),
+            ml_dsa::ml_dsa_44::PUBLIC_KEY_DER_SIZE,
+        )?;
+        Ok(Key {
+            secret: Secret::MlDsa44(Arc::new(key)),
+            spki,
+        })
+    }
+
+    fn ml_dsa_65(key: ml_dsa::ml_dsa_65::PrivateKey) -> Result<Self, Error> {
+        let spki = spki(
+            |o| key.public_key().der_bytes(o),
+            ml_dsa::ml_dsa_65::PUBLIC_KEY_DER_SIZE,
+        )?;
+        Ok(Key {
+            secret: Secret::MlDsa65(Arc::new(key)),
+            spki,
+        })
+    }
+
+    fn ml_dsa_87(key: ml_dsa::ml_dsa_87::PrivateKey) -> Result<Self, Error> {
+        let spki = spki(
+            |o| key.public_key().der_bytes(o),
+            ml_dsa::ml_dsa_87::PUBLIC_KEY_DER_SIZE,
+        )?;
+        Ok(Key {
+            secret: Secret::MlDsa87(Arc::new(key)),
+            spki,
+        })
+    }
+
     /// The schemes this key can sign under, best first.
     fn schemes(&self) -> &'static [SignatureScheme] {
         match self.secret {
@@ -202,6 +247,9 @@ impl Key {
             Secret::P384(_) => &[SignatureScheme::ECDSA_NISTP384_SHA384],
             Secret::P521(_) => &[SignatureScheme::ECDSA_NISTP521_SHA512],
             Secret::Ed25519(_) => &[SignatureScheme::ED25519],
+            Secret::MlDsa44(_) => &[SignatureScheme::ML_DSA_44],
+            Secret::MlDsa65(_) => &[SignatureScheme::ML_DSA_65],
+            Secret::MlDsa87(_) => &[SignatureScheme::ML_DSA_87],
         }
     }
 
@@ -212,6 +260,9 @@ impl Key {
             Secret::P384(_) => "ECDSA P-384",
             Secret::P521(_) => "ECDSA P-521",
             Secret::Ed25519(_) => "Ed25519",
+            Secret::MlDsa44(_) => "ML-DSA-44",
+            Secret::MlDsa65(_) => "ML-DSA-65",
+            Secret::MlDsa87(_) => "ML-DSA-87",
         }
     }
 }
@@ -317,6 +368,20 @@ impl Signer for Signing {
             (Secret::Ed25519(key), S::ED25519) => {
                 Ok(key.sign(message).to_vec())
             }
+            // Hedged: fresh randomness mixed into the derivation
+            // (FIPS 204 section 3.4), and the empty context TLS uses.
+            (Secret::MlDsa44(key), S::ML_DSA_44) => {
+                let mut rng = generator().map_err(failed)?;
+                Ok(key.sign(&mut rng, &[], message).map_err(failed)?.to_vec())
+            }
+            (Secret::MlDsa65(key), S::ML_DSA_65) => {
+                let mut rng = generator().map_err(failed)?;
+                Ok(key.sign(&mut rng, &[], message).map_err(failed)?.to_vec())
+            }
+            (Secret::MlDsa87(key), S::ML_DSA_87) => {
+                let mut rng = generator().map_err(failed)?;
+                Ok(key.sign(&mut rng, &[], message).map_err(failed)?.to_vec())
+            }
             // `choose_scheme` hands out only the pairs above.
             (_, scheme) => Err(Error::General(format!(
                 "no {scheme:?} signature from this key"
@@ -395,6 +460,56 @@ mod tests {
         let spki = key.public_key().unwrap();
         let spki = spki.as_ref();
         assert!(cert.windows(spki.len()).any(|w| w == spki));
+    }
+
+    /// The same for ML-DSA, whose keys OpenSSL writes with both the
+    /// seed and the expanded key, and whose signatures here verify.
+    #[test]
+    fn ml_dsa_keys_load_and_sign() {
+        for (key, cert, scheme, verify, raw_len) in [
+            (
+                &include_bytes!("../tests/data/ml-dsa-44/end.pkcs8.der")[..],
+                &include_bytes!("../tests/data/ml-dsa-44/end.der")[..],
+                SignatureScheme::ML_DSA_44,
+                crate::verify::ML_DSA_44,
+                ml_dsa::ml_dsa_44::PUBLIC_KEY_SIZE,
+            ),
+            (
+                &include_bytes!("../tests/data/ml-dsa-65/end.pkcs8.der")[..],
+                &include_bytes!("../tests/data/ml-dsa-65/end.der")[..],
+                SignatureScheme::ML_DSA_65,
+                crate::verify::ML_DSA_65,
+                ml_dsa::ml_dsa_65::PUBLIC_KEY_SIZE,
+            ),
+            (
+                &include_bytes!("../tests/data/ml-dsa-87/end.pkcs8.der")[..],
+                &include_bytes!("../tests/data/ml-dsa-87/end.der")[..],
+                SignatureScheme::ML_DSA_87,
+                crate::verify::ML_DSA_87,
+                ml_dsa::ml_dsa_87::PUBLIC_KEY_SIZE,
+            ),
+        ] {
+            let key = Keys.load_private_key(pkcs8(key)).unwrap();
+            let spki = key.public_key().unwrap();
+            let spki = spki.as_ref();
+            assert!(cert.windows(spki.len()).any(|w| w == spki));
+            // The SPKI ends with the raw key, which is what webpki
+            // hands the verifier.
+            let raw = &spki[spki.len() - raw_len..];
+            let signature = key
+                .choose_scheme(&[SignatureScheme::ED25519, scheme])
+                .unwrap()
+                .sign(b"message")
+                .unwrap();
+            assert!(
+                verify.verify_signature(raw, b"message", &signature).is_ok()
+            );
+            assert!(
+                verify
+                    .verify_signature(raw, b"messagf", &signature)
+                    .is_err()
+            );
+        }
     }
 
     #[test]
