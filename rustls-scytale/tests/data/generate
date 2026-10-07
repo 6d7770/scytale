@@ -52,6 +52,9 @@ make ecdsa-p256 EC -sha256 -pkeyopt ec_paramgen_curve:P-256
 make ecdsa-p384 EC -sha384 -pkeyopt ec_paramgen_curve:P-384
 make ecdsa-p521 EC -sha512 -pkeyopt ec_paramgen_curve:P-521
 make ed25519 ED25519 ""
+make ml-dsa-44 ML-DSA-44 ""
+make ml-dsa-65 ML-DSA-65 ""
+make ml-dsa-87 ML-DSA-87 ""
 
 for name in rsa-2048 rsa-3072 rsa-4096; do
     openssl rsa -in "$name/end.pkcs8.der" -inform DER -traditional \

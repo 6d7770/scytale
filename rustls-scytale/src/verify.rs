@@ -4,8 +4,8 @@
 //! Each algorithm is a pair of algorithm identifiers, which is how
 //! webpki matches one to a certificate, and a check. The public key
 //! arrives as the contents of the certificate's `subjectPublicKey`
-//! bit string: an uncompressed point, an `RSAPublicKey`, or 32 raw
-//! bytes for Ed25519.
+//! bit string: an uncompressed point, an `RSAPublicKey`, 32 raw
+//! bytes for Ed25519, or the encoded key for ML-DSA.
 
 use core::fmt;
 
@@ -17,7 +17,7 @@ use rustls::crypto::{SignatureScheme, WebPkiSupportedAlgorithms};
 use scytale::hash::Hash;
 use scytale::hash::sha2::{Sha256, Sha384, Sha512};
 use scytale::sig::rsa::DigestInfo;
-use scytale::sig::{ecdsa, ed25519, rsa};
+use scytale::sig::{ecdsa, ed25519, ml_dsa, rsa};
 
 /// One verification algorithm.
 struct Algorithm {
@@ -89,6 +89,25 @@ fn ed25519(key: &[u8], message: &[u8], sig: &[u8]) -> bool {
     };
     ed25519::verify(key, message, sig).is_ok()
 }
+
+/// ML-DSA (FIPS 204), pure, with the empty context TLS uses
+/// (draft-ietf-tls-mldsa). Key and signature are fixed lengths.
+macro_rules! ml_dsa_check {
+    ($fn:ident, $set:ident) => {
+        fn $fn(key: &[u8], message: &[u8], sig: &[u8]) -> bool {
+            let (Ok(key), Ok(sig)) = (key.try_into(), sig.try_into()) else {
+                return false;
+            };
+            ml_dsa::$set::PublicKey::new(key)
+                .verify(&[], message, sig)
+                .is_ok()
+        }
+    };
+}
+
+ml_dsa_check!(ml_dsa_44, ml_dsa_44);
+ml_dsa_check!(ml_dsa_65, ml_dsa_65);
+ml_dsa_check!(ml_dsa_87, ml_dsa_87);
 
 /// The RSA moduli accepted: below 2048 bits is too weak to take, and
 /// above 8192 is past what scytale reads.
@@ -243,6 +262,19 @@ algorithm!(
     alg_id::RSA_PSS_SHA512, rsa_pss::<Sha512>
 );
 
+algorithm!(
+    /// ML-DSA-44.
+    ML_DSA_44, alg_id::ML_DSA_44, alg_id::ML_DSA_44, ml_dsa_44
+);
+algorithm!(
+    /// ML-DSA-65.
+    ML_DSA_65, alg_id::ML_DSA_65, alg_id::ML_DSA_65, ml_dsa_65
+);
+algorithm!(
+    /// ML-DSA-87.
+    ML_DSA_87, alg_id::ML_DSA_87, alg_id::ML_DSA_87, ml_dsa_87
+);
+
 /// Every verification algorithm here, for certificate chains.
 pub static ALL_VERIFICATION_ALGS: &[&dyn SignatureVerificationAlgorithm] = &[
     ECDSA_P256_SHA256,
@@ -264,12 +296,21 @@ pub static ALL_VERIFICATION_ALGS: &[&dyn SignatureVerificationAlgorithm] = &[
     RSA_PSS_2048_8192_SHA256_LEGACY_KEY,
     RSA_PSS_2048_8192_SHA384_LEGACY_KEY,
     RSA_PSS_2048_8192_SHA512_LEGACY_KEY,
+    ML_DSA_44,
+    ML_DSA_65,
+    ML_DSA_87,
 ];
 
 /// The algorithms each handshake signature scheme may be checked
 /// with, in preference order: that order is what the peer is told.
 /// TLS 1.3 ties an ECDSA scheme to its curve and checks the first
 /// entry only; TLS 1.2 does not, and tries each.
+///
+/// ML-DSA comes last: its signatures are kilobytes, so a peer that
+/// can sign with something else is asked to. rustls gives a provider
+/// no way to offer a scheme for TLS 1.3 only, so in a TLS 1.2
+/// server's request for a client certificate ML-DSA is offered too,
+/// which the ML-DSA draft does not intend.
 pub static SUPPORTED_SIG_ALGS: WebPkiSupportedAlgorithms =
     match WebPkiSupportedAlgorithms::new(
         ALL_VERIFICATION_ALGS,
@@ -311,6 +352,9 @@ pub static SUPPORTED_SIG_ALGS: WebPkiSupportedAlgorithms =
                 SignatureScheme::RSA_PKCS1_SHA256,
                 &[RSA_PKCS1_2048_8192_SHA256],
             ),
+            (SignatureScheme::ML_DSA_44, &[ML_DSA_44]),
+            (SignatureScheme::ML_DSA_65, &[ML_DSA_65]),
+            (SignatureScheme::ML_DSA_87, &[ML_DSA_87]),
         ],
     ) {
         Ok(algorithms) => algorithms,
@@ -398,7 +442,8 @@ mod tests {
         let schemes = SUPPORTED_SIG_ALGS.supported_schemes();
         assert_eq!(schemes[0], SignatureScheme::ECDSA_NISTP384_SHA384);
         assert_eq!(schemes[3], SignatureScheme::ED25519);
-        assert_eq!(schemes.len(), 10);
+        assert_eq!(schemes.len(), 13);
+        assert_eq!(schemes[12], SignatureScheme::ML_DSA_87);
         for alg in SUPPORTED_SIG_ALGS.mapping().iter().flat_map(|m| m.1.iter())
         {
             assert!(
