@@ -131,7 +131,7 @@ The API documentation is on [docs.rs](https://docs.rs/scytale), and
 test vectors, against the NIST Automated Cryptographic Validation
 Program (ACVP) vectors, and against Project Wycheproof, whose cases
 are chosen to break implementations rather than to exercise them.
-The corpus is 120 files holding 88,204 cases, and every case this
+The corpus is 121 files holding 88,222 cases, and every case this
 build can run is run; the Monte Carlo groups chain a thousand cipher
 calls per case, with the key re-derived at each step. Every
 implementation is put through the whole vector set for its primitive,
@@ -183,7 +183,7 @@ the machinery behind it:
 | `kdf` | key derivation | HKDF, PBKDF2, TLS 1.2 PRF |
 | `kem` | key encapsulation | ML-KEM-512, -768 and -1024 |
 | `kex` | key agreement | X25519, ECDH over P-256, P-384 and P-521 |
-| `pke` | public-key encryption | RSA-OAEP |
+| `pke` | public-key encryption | HPKE, RSA-OAEP |
 | `sig` | signatures | Ed25519, ECDSA over P-256, P-384 and P-521, ML-DSA, SLH-DSA, RSA-PSS, RSA PKCS#1 v1.5 |
 | `random` | random numbers | CTR_DRBG over AES-256, and what seeds it |
 | `constant_time` | comparing secrets | equality whose timing says nothing |
@@ -300,6 +300,7 @@ encryption keys are distinct types: a key does one job.
 | ML-KEM (FIPS 203), all three sets | `kem` | post-quantum; implicit rejection; seed and expanded keys |
 | X25519 (RFC 7748) | `kex` | shared secret needs HKDF; refuses low-order keys |
 | ECDH (SP 800-56A) over P-256, P-384, P-521 | `kex` | every public key checked on the curve; compressed points read |
+| HPKE (RFC 9180), base mode | `pke` | DHKEM over X25519, P-256, P-384, P-521; HKDF-SHA256/384/512; AES-GCM, ChaCha20-Poly1305 |
 | RSA-OAEP (RFC 8017) | `pke` | constant-time unpadding; no v1.5 decryption, ever |
 | Ed25519, Ed25519ctx, Ed25519ph (RFC 8032) | `sig` | deterministic; refuses malleable signatures; context strings |
 | ECDSA (FIPS 186-5) over P-256, P-384, P-521 | `sig` | RFC 6979 nonces; r \|\| s and DER signature forms |
@@ -681,11 +682,12 @@ The ACVP and Project Wycheproof vectors live in
 to keep it small. Building and using the library never needs them;
 running the tests from a downloaded crate skips those suites and
 leaves the standards' own vectors, which are built into the unit
-tests, as the check. The public-key algorithms run against both:
-ACVP's ML-KEM, ML-DSA, SLH-DSA, RSA, KTS-IFC, ECDSA, EDDSA, XECDH and
-KDA suites, and Wycheproof's ML-KEM, ML-DSA, ECDH, ECDSA, X25519,
-Ed25519, RSA signature and RSA-OAEP files, whose deliberately twisted
-cases are the point. The
+tests, as the check. The public-key algorithms and the KDFs run
+against both: ACVP's ML-KEM, ML-DSA, SLH-DSA, RSA, KTS-IFC, ECDSA,
+EDDSA, XECDH, KDA and TLS 1.2 KDF suites, the CFRG's HPKE vectors,
+and Wycheproof's ML-KEM, ML-DSA, ECDH, ECDSA, X25519, Ed25519, RSA
+signature and RSA-OAEP files, whose deliberately twisted cases are
+the point. The
 deterministic ECDSA suite checks signatures byte for byte, since RFC
 6979 fixes the nonce. RSA is the one algorithm whose raw
 primitives NIST publishes vectors for, and those run too: they are the
