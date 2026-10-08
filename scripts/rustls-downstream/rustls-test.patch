@@ -394,7 +394,7 @@ index 81bcb06..fa17ffb 100644
          (_, _, true) => NamedGroup::secp256r1,
          (_, _, _) => NamedGroup::X25519,
 diff --git a/rustls-test/tests/api/resolve.rs b/rustls-test/tests/api/resolve.rs
-index 7ed18ed..9eec7a6 100644
+index 7ed18ed..9a20ac9 100644
 --- a/rustls-test/tests/api/resolve.rs
 +++ b/rustls-test/tests/api/resolve.rs
 @@ -24,7 +24,7 @@ use rustls_test::{
@@ -424,16 +424,19 @@ index 7ed18ed..9eec7a6 100644
          v.insert(2, SignatureScheme::ECDSA_NISTP521_SHA512);
      }
  
-@@ -423,6 +423,14 @@ fn default_signature_schemes(version: ProtocolVersion) -> Vec<SignatureScheme> {
+@@ -423,6 +423,17 @@ fn default_signature_schemes(version: ProtocolVersion) -> Vec<SignatureScheme> {
          ]);
      }
  
 +    if provider_is_scytale() {
-+        v.extend_from_slice(&[
-+            SignatureScheme::ML_DSA_44,
-+            SignatureScheme::ML_DSA_65,
-+            SignatureScheme::ML_DSA_87,
-+        ]);
++        v.splice(
++            0..0,
++            [
++                SignatureScheme::ML_DSA_44,
++                SignatureScheme::ML_DSA_65,
++                SignatureScheme::ML_DSA_87,
++            ],
++        );
 +    }
 +
      v

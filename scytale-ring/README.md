@@ -1,7 +1,7 @@
 # scytale-ring
 
-A drop-in replacement for [ring](https://crates.io/crates/ring) that
-does the work with [scytale](https://crates.io/crates/scytale).
+A drop-in replacement for [ring](https://github.com/briansmith/ring)
+that does the work with [scytale](https://github.com/6d7770/scytale).
 
 It presents ring 0.17's public API, module for module and name for
 name, and the library is called `ring`, so code written against ring
@@ -64,7 +64,8 @@ crate over scytale, make the same one-line change in its manifest;
 rustls and rustls-webpki and runs their test suites, which pass.
 
 From rustls 0.24, which takes its cryptography from a provider the
-program names, use [rustls-scytale](https://crates.io/crates/rustls-scytale)
+program names, use
+[rustls-scytale](https://github.com/6d7770/scytale/tree/main/rustls-scytale)
 instead: it is that provider, built on scytale directly.
 
 ## Which ring

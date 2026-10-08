@@ -29,27 +29,49 @@
 //!
 //! # What it offers
 //!
-//! - TLS 1.3: AES-128-GCM, AES-256-GCM, ChaCha20-Poly1305.
-//! - TLS 1.2: ECDHE-ECDSA and ECDHE-RSA with the same three.
-//! - Key exchange: X25519MLKEM768 first, then X25519, P-256, P-384;
-//!   also SECP256R1MLKEM768, ML-KEM-768 and ML-KEM-1024.
-//! - Signatures: ECDSA on P-256, P-384 and P-521; Ed25519; RSA-PSS
-//!   and PKCS#1 v1.5, 2048 to 8192 bits; ML-DSA-44, -65 and -87,
-//!   last in preference.
-//! - QUIC: packet and header protection for every TLS 1.3 suite.
-//! - Session tickets: ChaCha20-Poly1305, the key rotated every six
-//!   hours.
-//! - HPKE, for Encrypted Client Hello: DHKEM over X25519, P-256,
-//!   P-384 and P-521, each with its own hash and any of the three
-//!   AEADs, in [`hpke`].
+//! TLS 1.3:
+//!
+//! - Cipher suites: AES-128-GCM-SHA256, AES-256-GCM-SHA384 and
+//!   ChaCha20-Poly1305-SHA256.
+//! - QUIC: all three suites also protect QUIC packets and their
+//!   headers (RFC 9001), so rustls's QUIC support runs on this
+//!   provider.
+//! - Key exchange: X25519MLKEM768 first, then X25519, P-256 and
+//!   P-384. SECP256R1MLKEM768, ML-KEM-768 and ML-KEM-1024 are in
+//!   [`ALL_KX_GROUPS`] for a program that asks for them.
+//! - Handshake signatures: ML-DSA-44, -65 and -87; ECDSA on P-256,
+//!   P-384 and P-521, each with its own hash; Ed25519; RSA-PSS.
+//! - Encrypted Client Hello: HPKE with DHKEM over X25519, P-256,
+//!   P-384 and P-521, each with its own hash, and AES-128-GCM,
+//!   AES-256-GCM and ChaCha20-Poly1305, in [`hpke`].
+//!
+//! TLS 1.2:
+//!
+//! - Cipher suites: ECDHE-ECDSA and ECDHE-RSA, each with
+//!   AES-128-GCM, AES-256-GCM and ChaCha20-Poly1305.
+//! - Key exchange: X25519, P-256 and P-384. The post-quantum groups
+//!   are defined for TLS 1.3 only.
+//! - Handshake signatures: ECDSA on P-256, P-384 and P-521, where a
+//!   peer's may pair any of the curves with SHA-256, SHA-384 or
+//!   SHA-512; Ed25519; RSA-PSS and RSA PKCS#1 v1.5.
+//!
+//! Both:
+//!
+//! - Certificate verification: ECDSA on P-256, P-384 and P-521 with
+//!   SHA-256, SHA-384 or SHA-512; Ed25519; RSA PKCS#1 v1.5 and PSS,
+//!   2048 to 8192 bits; ML-DSA.
+//! - Private keys: RSA in PKCS#1 or PKCS#8; ECDSA in SEC 1 or
+//!   PKCS#8; Ed25519 and ML-DSA in PKCS#8.
+//! - Session tickets: sealed with ChaCha20-Poly1305, under a key
+//!   rotated every six hours.
 //!
 //! Everything is a call into scytale; this crate holds only what
 //! rustls asks of a provider: the record layouts, the lists, and the
 //! traits between them. It is not FIPS validated, and says so.
 //!
 //! [`CryptoProvider::get_default`]: rustls::crypto::CryptoProvider::get_default
-//! [rustls]: https://docs.rs/rustls
-//! [scytale]: https://docs.rs/scytale
+//! [rustls]: ::rustls
+//! [scytale]: ::scytale
 
 #![no_std]
 #![forbid(unsafe_code)]

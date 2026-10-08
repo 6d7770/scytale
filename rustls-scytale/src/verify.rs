@@ -306,15 +306,19 @@ pub static ALL_VERIFICATION_ALGS: &[&dyn SignatureVerificationAlgorithm] = &[
 /// TLS 1.3 ties an ECDSA scheme to its curve and checks the first
 /// entry only; TLS 1.2 does not, and tries each.
 ///
-/// ML-DSA comes last: its signatures are kilobytes, so a peer that
-/// can sign with something else is asked to. rustls gives a provider
-/// no way to offer a scheme for TLS 1.3 only, so in a TLS 1.2
-/// server's request for a client certificate ML-DSA is offered too,
-/// which the ML-DSA draft does not intend.
+/// ML-DSA comes first, so a peer that holds an ML-DSA certificate
+/// beside a classical one is asked for the post-quantum one; a peer
+/// with one certificate signs with it whatever the order. rustls
+/// gives a provider no way to offer a scheme for TLS 1.3 only, so in
+/// a TLS 1.2 server's request for a client certificate ML-DSA is
+/// offered too, which the ML-DSA draft does not intend.
 pub static SUPPORTED_SIG_ALGS: WebPkiSupportedAlgorithms =
     match WebPkiSupportedAlgorithms::new(
         ALL_VERIFICATION_ALGS,
         &[
+            (SignatureScheme::ML_DSA_44, &[ML_DSA_44]),
+            (SignatureScheme::ML_DSA_65, &[ML_DSA_65]),
+            (SignatureScheme::ML_DSA_87, &[ML_DSA_87]),
             (
                 SignatureScheme::ECDSA_NISTP384_SHA384,
                 &[ECDSA_P384_SHA384, ECDSA_P256_SHA384, ECDSA_P521_SHA384],
@@ -352,9 +356,6 @@ pub static SUPPORTED_SIG_ALGS: WebPkiSupportedAlgorithms =
                 SignatureScheme::RSA_PKCS1_SHA256,
                 &[RSA_PKCS1_2048_8192_SHA256],
             ),
-            (SignatureScheme::ML_DSA_44, &[ML_DSA_44]),
-            (SignatureScheme::ML_DSA_65, &[ML_DSA_65]),
-            (SignatureScheme::ML_DSA_87, &[ML_DSA_87]),
         ],
     ) {
         Ok(algorithms) => algorithms,
@@ -440,10 +441,12 @@ mod tests {
     #[test]
     fn mapping_is_consistent() {
         let schemes = SUPPORTED_SIG_ALGS.supported_schemes();
-        assert_eq!(schemes[0], SignatureScheme::ECDSA_NISTP384_SHA384);
-        assert_eq!(schemes[3], SignatureScheme::ED25519);
+        assert_eq!(schemes[0], SignatureScheme::ML_DSA_44);
+        assert_eq!(schemes[2], SignatureScheme::ML_DSA_87);
+        assert_eq!(schemes[3], SignatureScheme::ECDSA_NISTP384_SHA384);
+        assert_eq!(schemes[6], SignatureScheme::ED25519);
         assert_eq!(schemes.len(), 13);
-        assert_eq!(schemes[12], SignatureScheme::ML_DSA_87);
+        assert_eq!(schemes[12], SignatureScheme::RSA_PKCS1_SHA256);
         for alg in SUPPORTED_SIG_ALGS.mapping().iter().flat_map(|m| m.1.iter())
         {
             assert!(
