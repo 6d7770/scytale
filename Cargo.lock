@@ -181,8 +181,20 @@ version = "0.9.0"
 dependencies = [
  "rustls",
  "rustls-pki-types",
+ "rustls-util",
  "scytale",
+ "webpki-roots",
  "zeroize",
+]
+
+[[package]]
+name = "rustls-util"
+version = "0.1.0-dev.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "072d6f53c691dd1d398d648fad8ad414b90f7221db12ee97c82fc76117a96875"
+dependencies = [
+ "log",
+ "rustls",
 ]
 
 [[package]]
@@ -368,6 +380,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ef64dbcc55df09c7e5a46182d181c2cfa3e925f3da937ea764728b4bbb9dcbf"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "webpki-roots"
+version = "1.0.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7dcd9d09a39985f5344844e66b0c530a33843579125f23e21e9f0f220850f22a"
+dependencies = [
+ "rustls-pki-types",
 ]
 
 [[package]]

@@ -9,6 +9,7 @@ rust-version.workspace = true
 license.workspace = true
 repository = "https://github.com/6d7770/scytale"
 documentation = "https://docs.rs/rustls-scytale"
+readme = "README.md"
 keywords = ["rustls", "tls", "cryptography", "post-quantum", "no-std"]
 categories = ["cryptography", "network-programming", "no-std"]
 
@@ -27,3 +28,6 @@ zeroize = { version = "1", default-features = false }
 # The certificate verifier the handshake tests need, from rustls's
 # own webpki feature.
 rustls = { version = "=0.24.0-dev.1", features = ["webpki"] }
+# The examples' socket loop and root certificates.
+rustls-util = "=0.1.0-dev.1"
+webpki-roots = "1"

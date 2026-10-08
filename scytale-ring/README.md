@@ -63,6 +63,10 @@ crate over scytale, make the same one-line change in its manifest;
 `scripts/test-ring-downstream` in the scytale repository does that to
 rustls and rustls-webpki and runs their test suites, which pass.
 
+From rustls 0.24, which takes its cryptography from a provider the
+program names, use [rustls-scytale](https://crates.io/crates/rustls-scytale)
+instead: it is that provider, built on scytale directly.
+
 ## Which ring
 
 The version number is scytale's, since the two are released together,

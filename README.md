@@ -589,6 +589,31 @@ rustls and rustls-webpki pass their own test suites on it
 (`scripts/test-ring-downstream`). Its README says where it differs
 from ring, the main difference being deterministic ECDSA signatures.
 
+### Under rustls
+
+rustls 0.24 carries no cryptography of its own; a program hands it a
+provider. [`rustls-scytale`](rustls-scytale) is one, built on scytale
+directly:
+
+```toml
+[dependencies]
+rustls-scytale = "0.9"
+```
+
+```rust,ignore
+let provider = Arc::new(rustls_scytale::DEFAULT_PROVIDER);
+let config = rustls::ClientConfig::builder(provider)
+    .with_root_certificates(roots)
+    .with_no_client_auth()?;
+```
+
+It offers X25519MLKEM768 as its first key share, accepts and serves
+ML-DSA certificates, and has HPKE for Encrypted Client Hello.
+rustls's own API test suite and BoGo, BoringSSL's TLS conformance
+runner, pass with it as the provider
+(`scripts/test-rustls-downstream`). Its README says which rustls it
+works with and where it differs.
+
 ### From a shell
 
 [`scytale-cli`](scytale-cli) builds a `scytale` command for scripts,
