@@ -1,7 +1,7 @@
 # rustls-scytale
 
-A cryptography provider for [rustls](https://crates.io/crates/rustls) that
-uses the [scytale](https://crates.io/crates/scytale) library.
+A cryptography provider for [rustls](https://github.com/rustls/rustls)
+that uses the [scytale](https://github.com/6d7770/scytale) library.
 
 This provider is built against rustls 0.24.0-dev.1, the current
 development release, and will move to 0.24.0 when that is released.
@@ -57,17 +57,18 @@ localhost.
 ### TLS 1.3
 
 - **Cipher suites:** AES-128-GCM-SHA256, AES-256-GCM-SHA384 and
-  ChaCha20-Poly1305-SHA256, each with the packet and header
-  protection QUIC uses.
+  ChaCha20-Poly1305-SHA256.
+- **QUIC:** all three suites also protect QUIC packets and their
+  headers (RFC 9001), so rustls's QUIC support runs on this
+  provider.
 - **Key exchange:** X25519MLKEM768 first, then X25519, P-256 and
   P-384. SECP256R1MLKEM768, ML-KEM-768 and ML-KEM-1024 are in
   `ALL_KX_GROUPS` for a program that asks for them.
-- **Handshake signatures:** ECDSA on P-256, P-384 and P-521, each
-  with its own hash; Ed25519; RSA-PSS; ML-DSA-44, -65 and -87, last
-  in preference.
+- **Handshake signatures:** ML-DSA-44, -65 and -87; ECDSA on
+  P-256, P-384 and P-521, each with its own hash; Ed25519; RSA-PSS.
 - **Encrypted Client Hello:** HPKE with DHKEM over X25519, P-256,
-  P-384 and P-521, each with its own hash, and the three AEADs, in
-  `hpke`.
+  P-384 and P-521, each with its own hash, and AES-128-GCM,
+  AES-256-GCM and ChaCha20-Poly1305, in `hpke`.
 
 ### TLS 1.2
 
@@ -76,8 +77,8 @@ localhost.
 - **Key exchange:** X25519, P-256 and P-384. The post-quantum groups
   are defined for TLS 1.3 only.
 - **Handshake signatures:** ECDSA on P-256, P-384 and P-521, where
-  a peer's may pair any of the curves with any of the three hashes;
-  Ed25519; RSA-PSS and RSA PKCS#1 v1.5.
+  a peer's may pair any of the curves with SHA-256, SHA-384 or
+  SHA-512; Ed25519; RSA-PSS and RSA PKCS#1 v1.5.
 
 ### Both
 
@@ -91,12 +92,16 @@ localhost.
 
 ## Where it differs
 
-- **ECDSA signatures are deterministic** (RFC 6979). They verify
-  anywhere, but are not the bytes another provider would make.
-- **ML-DSA is offered last**, its signatures being kilobytes, so a
-  peer that can sign another way is asked to. rustls gives a
-  provider no way to offer a scheme for TLS 1.3 only, so a TLS 1.2
-  server's request for a client certificate lists ML-DSA too.
+- **ECDSA signatures are deterministic** (RFC 6979): the nonce is
+  derived from the key and the message digest, with HMAC over the
+  signing hash (SHA-256 for P-256, SHA-384 for P-384, SHA-512 for
+  P-521), so a weak or failed random source cannot expose the key.
+- **ML-DSA is preferred**, so a peer that holds an ML-DSA
+  certificate beside a classical one is asked for the post-quantum
+  one; a peer with one certificate signs with it whatever the
+  order. rustls gives a provider no way to offer a scheme for TLS
+  1.3 only, so a TLS 1.2 server's request for a client certificate
+  lists ML-DSA too.
 - **An RSA key must be `rsaEncryption`.** An `id-RSASSA-PSS` key is
   refused: its certificate's parameters would not match the public
   key rustls compares it against. An `rsaEncryption` key signs PSS.

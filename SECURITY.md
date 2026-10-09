@@ -7,7 +7,9 @@ claim to hold it to.
 
 Vulnerabilities: open an issue on the repository named in
 `Cargo.toml`, or contact the maintainer privately through GitHub if
-the report is sensitive. There is no bug bounty.
+the report is sensitive. There is no bug bounty. This covers
+rustls-scytale too (see *rustls-scytale* below); a fault in rustls
+or webpki themselves belongs to the rustls project.
 
 ## Attacker models
 
@@ -299,6 +301,56 @@ The stack depth of an operation therefore depends on the algorithm
 and the key length and on nothing secret. An attacker observing
 memory use, page faults or stack high-water marks learns those
 lengths only.
+
+## rustls-scytale
+
+The provider implements no cryptography: every algorithm it offers
+is one of scytale's above, and what this file says of that holds
+here. What the provider adds is framing, checks and key handling,
+and this is what it promises about them.
+
+- **Memory safety.** The crate is `#![forbid(unsafe_code)]`, and its
+  production paths do not `unwrap`, `expect` or `panic!`.
+- **Records.** A TLS record or QUIC packet that does not
+  authenticate is an error and its plaintext is wiped, as scytale's
+  AEADs do. Nonces are built from the record or packet number rustls
+  hands over, never drawn at random. A TLS 1.2 record of more than
+  16,384 bytes of plaintext is refused here, since rustls checks
+  that limit for TLS 1.3 only.
+- **Key shares.** Every share a peer sends is checked before use,
+  and any failure is rustls's `InvalidKeyShare`. An X25519 exchange
+  giving the all-zero secret is refused; a P-256 or P-384 share must
+  be an uncompressed point of exactly the right length and on the
+  curve; an ML-KEM encapsulation key must be canonically encoded and
+  a ciphertext exactly the right length. Shared secrets are wiped
+  once rustls has its copy.
+- **Session tickets.** Sealed with ChaCha20-Poly1305 under a key
+  rotated every six hours, with a random nonce and the key's name as
+  the associated data. Opening one cannot panic on any input: a
+  ticket longer than any issued is refused before it is read, the
+  key name is compared with `constant_time::equal`, and a ticket
+  that does not open is treated as no ticket.
+- **Randomness.** Each request builds a fresh `CtrDrbg` from the
+  operating system, so no generator state is held between calls and
+  nothing a `fork` or a snapshot copies can repeat; the rule in *RNG
+  across fork* does not apply to the provider.
+- **Signing.** ECDSA is deterministic (RFC 6979); RSA-PSS salts and
+  ML-DSA's hedging come from the randomness above. RSA keys must be
+  2048 to 8192 bits.
+- **Allocation.** Unlike scytale, the provider allocates: rustls
+  holds keys behind `Box` and `Arc`, so traffic keys, signing keys
+  and the master secret are on the heap. Each is wiped on drop, with
+  the limits *Memory safety* gives for wiping.
+- **Not FIPS validated.** Every `fips()` says so.
+- **ML-DSA in TLS 1.2.** rustls gives a provider no way to offer a
+  signature scheme for TLS 1.3 only, so a TLS 1.2 server's request
+  for a client certificate lists ML-DSA, which its specification
+  does not define for TLS 1.2. The signatures are as sound there as
+  anywhere; the use is outside the standard.
+- **Not the provider's.** The handshake state machine, certificate
+  path validation and every protocol decision are rustls's and
+  webpki's, and are held to their own tests; this provider runs
+  rustls's API suite and BoGo, but does not change what they check.
 
 ## What scytale does not protect against
 

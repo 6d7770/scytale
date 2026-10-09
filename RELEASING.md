@@ -8,15 +8,19 @@ change does not carry a bump with it.
 
 ## 1. Decide the version
 
-- The API grew or changed: bump the minor (`0.8.0` to `0.9.0`).
-  Before 1.0 a minor is the breaking step, and anything a caller
-  could write against the old version that the new one refuses is a
-  break.
-- Only fixes: bump the patch.
+- Any crate broke: bump the minor (`0.9.3` to `0.10.0`). Before 1.0
+  a minor is the breaking step, and anything a caller could write
+  against the old version that the new one refuses is a break. A
+  break in one crate moves them all, since they share the version.
+- Otherwise, additions and fixes alike: bump the patch (`0.9.0` to
+  `0.9.1`). A user then gets the release from `cargo update`, with
+  no edit to a manifest.
 
-The shim, the provider and the tool depend on the library by
-`version = "0.N"`, so a minor bump is what lets them reach a new
-library API; a patch bump needs no change there.
+The shim, the provider and the tool depend on the library by its
+full version, `version = "0.N.M"`, set to the release they go out
+in. A crate that uses something added in a patch release must not
+accept an earlier one, and naming the release itself always
+satisfies that.
 
 `rustls-scytale` goes out only while its `rustls` dependency is a
 release: it is pinned exactly to `=0.24.0-dev.1` now, and each
@@ -28,14 +32,16 @@ rustls 0.24.0, leave it out of the publish in step 6.
 - `Cargo.toml` (workspace): `version`.
 - `scytale-ring/Cargo.toml`, `rustls-scytale/Cargo.toml` and
   `scytale-cli/Cargo.toml`: the `version` in their
-  `scytale = { path = ..., version = "0.N" }` lines, on a minor bump.
+  `scytale = { path = ..., version = "0.N.M" }` lines, on every
+  release.
 - `README.md` and `scytale-ring/README.md`: the `ring = { package =
-  "scytale-ring", version = "0.N" }` example lines, and the "Which
+  "scytale-ring", version = "0.N" }` example lines, on a minor
+  bump, and the "Which
   ring" table in the shim's README, which gains a row when the ring
   API it presents changes and otherwise has its versions checked.
 - `README.md` and `rustls-scytale/README.md`: the
-  `rustls-scytale = "0.N"` lines, and the "Which rustls" table in the
-  provider's README, kept the same way.
+  `rustls-scytale = "0.N"` lines, on a minor bump, and the "Which
+  rustls" table in the provider's README, kept the same way.
 - `scytale-cli/scytale.1`: the `.TH` line's date and `scytale 0.N`.
   `cargo test -p scytale-cli` fails if this is missed. Then
   `scripts/man-md` to regenerate `scytale.1.md`.
@@ -89,16 +95,13 @@ done
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 ```
 
-Then the packaging. Only the library's can be tried before the
-release: the shim and the tool depend on the new library version,
-which crates.io does not have until step 6, and even `--no-verify`
-resolves the dependency there.
+Then the packaging. Packaged together, each crate is built against
+the library as it will be published rather than the one on
+crates.io, which does not have the new version until step 6:
 
 ```sh
-cargo publish --dry-run -p scytale
-cargo package -p scytale-ring --list
-cargo package -p rustls-scytale --list
-cargo package -p scytale-cli --list
+cargo package -p scytale -p scytale-ring -p rustls-scytale \
+    -p scytale-cli
 ```
 
 ## 5. Commit, tag, push
