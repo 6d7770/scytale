@@ -57,10 +57,11 @@ localhost.
 ### TLS 1.3
 
 - **Cipher suites:** AES-128-GCM-SHA256, AES-256-GCM-SHA384 and
-  ChaCha20-Poly1305-SHA256.
-- **QUIC:** all three suites also protect QUIC packets and their
-  headers (RFC 9001), so rustls's QUIC support runs on this
-  provider.
+  ChaCha20-Poly1305-SHA256 by default; AES-128-CCM-SHA256 and
+  AES-128-CCM-8-SHA256 on request (see *AES-CCM*).
+- **QUIC:** every suite but AES-128-CCM-8 also protects QUIC
+  packets and their headers (RFC 9001), so rustls's QUIC support
+  runs on this provider. RFC 9001 forbids the 8-byte tag in QUIC.
 - **Key exchange:** X25519MLKEM768 first, then X25519, P-256 and
   P-384. SECP256R1MLKEM768, ML-KEM-768 and ML-KEM-1024 are in
   `ALL_KX_GROUPS` for a program that asks for them.
@@ -73,7 +74,9 @@ localhost.
 ### TLS 1.2
 
 - **Cipher suites:** ECDHE-ECDSA and ECDHE-RSA, each with
-  AES-128-GCM, AES-256-GCM and ChaCha20-Poly1305.
+  AES-128-GCM, AES-256-GCM and ChaCha20-Poly1305, by default;
+  ECDHE-ECDSA with AES-128-CCM, AES-256-CCM, AES-128-CCM-8 and
+  AES-256-CCM-8 on request (see *AES-CCM*).
 - **Key exchange:** X25519, P-256 and P-384. The post-quantum groups
   are defined for TLS 1.3 only.
 - **Handshake signatures:** ECDSA on P-256, P-384 and P-521, where
@@ -89,6 +92,37 @@ localhost.
   PKCS#8; Ed25519 and ML-DSA in PKCS#8.
 - **Session tickets:** sealed with ChaCha20-Poly1305, under a key
   rotated every six hours.
+
+## AES-CCM
+
+The CCM suites are for the constrained-device profiles that ask for
+them, IEEE 2030.5 and RFC 7925 among them; nothing on the open web
+negotiates them, so none is a default. A program that needs them
+adds them to the provider it builds its configuration from:
+
+```rust,ignore
+use rustls_scytale::cipher_suite;
+
+let mut provider = rustls_scytale::DEFAULT_PROVIDER;
+provider.tls12_cipher_suites.to_mut().extend([
+    cipher_suite::TLS_ECDHE_ECDSA_WITH_AES_128_CCM,
+    cipher_suite::TLS_ECDHE_ECDSA_WITH_AES_128_CCM_8,
+]);
+```
+
+- **The 16-byte-tag suites** are as strong as the defaults, and are
+  in `ALL_TLS13_CIPHER_SUITES` and `ALL_TLS12_CIPHER_SUITES`.
+- **The CCM-8 suites** carry an 8-byte tag, so a forged record
+  succeeds with probability 2^-64 a try rather than 2^-128. TLS
+  ends the connection at the first failure, which is why the
+  profiles accept it. They are in no list: a program gets one only
+  by naming it, never by taking a whole list. A server that adds
+  one accepts it from any client that asks for it first; a server
+  that wants it only as a last resort sets
+  `ServerConfig::cipher_suite_selector` to `PreferServerOrder` and
+  puts it last.
+- **Kernel TLS** cannot take a CCM connection: rustls has no form
+  for CCM keys to be handed on in, so extracting them is refused.
 
 ## Where it differs
 
@@ -136,7 +170,11 @@ version, and a row here says so.
   rustls's own API suite with this crate as the provider, rustls's
   HPKE test against the RFC 9180 vectors and against aws-lc-rs both
   ways, and BoGo, Encrypted Client Hello included, with no failures.
-  It runs in CI on every push.
+- `scripts/test-openssl-interop` connects this crate to OpenSSL
+  over every suite it has, both ways. BoGo cannot reach the CCM
+  suites, since BoringSSL has none; here another implementation
+  reads every record this one writes.
+- Both scripts run in CI on every push.
 
 ## Licence
 

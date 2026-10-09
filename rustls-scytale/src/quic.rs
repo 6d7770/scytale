@@ -10,12 +10,19 @@ use scytale::Key;
 use scytale::cipher::aes::{Aes128, Aes256};
 use scytale::cipher::chacha20::ChaCha20;
 
-use crate::aead::{self, SealingKey, TAG_LEN};
+use crate::aead::{self, SealingKey};
 
 pub(crate) static AES_128_GCM: Quic = Quic(aead::Algorithm::Aes128Gcm);
 pub(crate) static AES_256_GCM: Quic = Quic(aead::Algorithm::Aes256Gcm);
 pub(crate) static CHACHA20_POLY1305: Quic =
     Quic(aead::Algorithm::ChaCha20Poly1305);
+// AES-128-CCM's 8-byte-tag form has none: RFC 9001 section 5.3
+// forbids it in QUIC.
+pub(crate) static AES_128_CCM: Quic = Quic(aead::Algorithm::Aes128Ccm);
+
+/// RFC 9001 section 6.6's limit for AES-128-CCM, both of them:
+/// 2^21.5, rounded down.
+const CCM_LIMIT: u64 = 2_965_820;
 
 /// The sample header protection takes from the packet, for every
 /// cipher here.
@@ -42,11 +49,17 @@ impl Algorithm for Quic {
         key: AeadKey,
     ) -> Box<dyn HeaderProtectionKey> {
         let key = key.as_ref();
+        // Every AES AEAD masks with the block cipher alone (RFC 9001
+        // section 5.4.3).
         let mask = match self.0 {
-            aead::Algorithm::Aes128Gcm => Key::try_from(key)
+            aead::Algorithm::Aes128Gcm
+            | aead::Algorithm::Aes128Ccm
+            | aead::Algorithm::Aes128Ccm8 => Key::try_from(key)
                 .ok()
                 .map(|k| Masker::Aes128(Aes128::new(&k))),
-            aead::Algorithm::Aes256Gcm => Key::try_from(key)
+            aead::Algorithm::Aes256Gcm
+            | aead::Algorithm::Aes256Ccm
+            | aead::Algorithm::Aes256Ccm8 => Key::try_from(key)
                 .ok()
                 .map(|k| Masker::Aes256(Aes256::new(&k))),
             aead::Algorithm::ChaCha20Poly1305 => Key::try_from(key)
@@ -82,7 +95,7 @@ impl PacketKey for Packets {
         let tag = key
             .seal(&nonce, header, payload)
             .map_err(|_| Error::EncryptError)?;
-        Ok(Tag::from(&tag[..]))
+        Ok(Tag::from(tag.as_ref()))
     }
 
     fn decrypt_in_place<'a>(
@@ -101,13 +114,14 @@ impl PacketKey for Packets {
     }
 
     fn tag_len(&self) -> usize {
-        TAG_LEN
+        self.algorithm.tag_len()
     }
 
     /// RFC 9001 section 6.6.
     fn confidentiality_limit(&self) -> u64 {
         match self.algorithm {
             aead::Algorithm::ChaCha20Poly1305 => u64::MAX,
+            aead::Algorithm::Aes128Ccm => CCM_LIMIT,
             _ => 1 << 23,
         }
     }
@@ -116,6 +130,7 @@ impl PacketKey for Packets {
     fn integrity_limit(&self) -> u64 {
         match self.algorithm {
             aead::Algorithm::ChaCha20Poly1305 => 1 << 36,
+            aead::Algorithm::Aes128Ccm => CCM_LIMIT,
             _ => 1 << 52,
         }
     }
@@ -340,7 +355,9 @@ mod tests {
     /// QUIC numbers them, and the wrong path or number fails.
     #[test]
     fn packets_round_trip() {
-        for quic in [&AES_128_GCM, &AES_256_GCM, &CHACHA20_POLY1305] {
+        for quic in
+            [&AES_128_GCM, &AES_256_GCM, &CHACHA20_POLY1305, &AES_128_CCM]
+        {
             let key = aead_key(&[3; 32][..quic.aead_key_len()]);
             let iv = Iv::new(&[9; 12]).unwrap();
             let packets = quic.packet_key(key, iv);

@@ -341,6 +341,11 @@ and this is what it promises about them.
   holds keys behind `Box` and `Arc`, so traffic keys, signing keys
   and the master secret are on the heap. Each is wiped on drop, with
   the limits *Memory safety* gives for wiping.
+- **Short tags only by name.** The CCM-8 suites' 8-byte tag lets a
+  forged record succeed with probability 2^-64 a try. They are in
+  no default and in no `ALL_*` list, which a test holds them to, so
+  a program offers or accepts one only where it names it. A server
+  that adds one accepts it from any client that asks for it first.
 - **Not FIPS validated.** Every `fips()` says so.
 - **ML-DSA in TLS 1.2.** rustls gives a provider no way to offer a
   signature scheme for TLS 1.3 only, so a TLS 1.2 server's request

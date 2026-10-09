@@ -1,0 +1,131 @@
+#!/bin/sh
+# Connects rustls-scytale to OpenSSL over every cipher suite the
+# provider has, both ways: its client to `openssl s_server`, and
+# `openssl s_client` to its server. BoGo cannot test the AES-CCM
+# suites, since BoringSSL has none, and a provider on both ends of a
+# handshake would agree with itself even if its record framing were
+# wrong; here another implementation reads every record this one
+# writes. Each run is limited to one suite on both sides, and the
+# provider's side fails unless that suite is the one negotiated.
+#
+# OpenSSL refuses the 8-byte-tag CCM_8 suites at its default
+# security level, so their runs lower it; nothing else does.
+#
+# Needs `openssl` 3.0 or later on the path.
+#
+# Usage: scripts/test-openssl-interop
+
+set -eu
+
+cd "$(dirname "$0")/.."
+data=$(pwd)/rustls-scytale/tests/data
+cargo build -q -p rustls-scytale --example interop
+interop=$(pwd)/target/debug/examples/interop
+
+work=$(mktemp -d)
+# The servers started in the background, so that a failure does not
+# leave one holding the port. `jobs` is empty inside a trap in some
+# shells, so they are kept here instead.
+pids=
+trap 'kill $pids 2>/dev/null; rm -rf "$work"' EXIT
+
+# OpenSSL wants PEM; the test data is DER.
+for dir in ecdsa-p256 rsa-2048; do
+    mkdir "$work/$dir"
+    openssl x509 -inform DER -in "$data/$dir/ca.der" \
+        -out "$work/$dir/ca.pem"
+    openssl x509 -inform DER -in "$data/$dir/end.der" \
+        -out "$work/$dir/end.pem"
+    openssl pkey -inform DER -in "$data/$dir/end.pkcs8.der" \
+        -out "$work/$dir/end.key"
+done
+
+port=8463
+
+# Waits up to ten seconds for a line in a server's output saying it
+# is listening, so the client does not start before it.
+wait_for() {
+    file=$1 pattern=$2 i=0
+    until grep -q "$pattern" "$file" 2>/dev/null; do
+        i=$((i + 1))
+        if [ $i -gt 100 ]; then
+            echo "no '$pattern' in $file:" >&2
+            cat "$file" >&2
+            exit 1
+        fi
+        sleep 0.1
+    done
+}
+
+# suite (rustls's name), key type, OpenSSL's options for it
+run() {
+    suite=$1 dir=$2
+    shift 2
+
+    # The provider's client against OpenSSL's server, which sends
+    # each line back reversed.
+    openssl s_server -naccept 1 -rev -accept "$port" \
+        -cert "$work/$dir/end.pem" -key "$work/$dir/end.key" "$@" \
+        > "$work/s_server.out" 2>&1 &
+    pids=$!
+    wait_for "$work/s_server.out" ACCEPT
+    "$interop" client "$port" "$suite" "$data/$dir/ca.der"
+    wait $pids
+
+    # OpenSSL's client against the provider's server. The client
+    # waits for the server to close rather than closing at the end of
+    # its input, so that it reads the server's line first.
+    "$interop" server "$port" "$suite" \
+        "$data/$dir/end.der" "$data/$dir/end.pkcs8.der" \
+        2> "$work/server.err" &
+    pids=$!
+    wait_for "$work/server.err" listening
+    printf 'hello from openssl\n' | openssl s_client -quiet -ign_eof \
+        -connect "localhost:$port" -CAfile "$work/$dir/ca.pem" \
+        -verify_return_error -verify_hostname localhost "$@" \
+        > "$work/s_client.out" 2>&1 || {
+        cat "$work/s_client.out" >&2
+        exit 1
+    }
+    if ! wait $pids; then
+        cat "$work/server.err" >&2
+        exit 1
+    fi
+    grep -q 'hello from rustls-scytale' "$work/s_client.out"
+    cat "$work/server.err" >&2
+}
+
+tls13() {
+    run "$1" ecdsa-p256 -tls1_3 -ciphersuites "$2" ${3:+-cipher "$3"}
+}
+tls12() {
+    run "$1" "$2" -tls1_2 -cipher "$3"
+}
+
+tls13 TLS13_AES_128_GCM_SHA256 TLS_AES_128_GCM_SHA256
+tls13 TLS13_AES_256_GCM_SHA384 TLS_AES_256_GCM_SHA384
+tls13 TLS13_CHACHA20_POLY1305_SHA256 TLS_CHACHA20_POLY1305_SHA256
+tls13 TLS13_AES_128_CCM_SHA256 TLS_AES_128_CCM_SHA256
+tls13 TLS13_AES_128_CCM_8_SHA256 TLS_AES_128_CCM_8_SHA256 \
+    'ALL:@SECLEVEL=0'
+
+tls12 TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256 ecdsa-p256 \
+    ECDHE-ECDSA-AES128-GCM-SHA256
+tls12 TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384 ecdsa-p256 \
+    ECDHE-ECDSA-AES256-GCM-SHA384
+tls12 TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256 ecdsa-p256 \
+    ECDHE-ECDSA-CHACHA20-POLY1305
+tls12 TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 rsa-2048 \
+    ECDHE-RSA-AES128-GCM-SHA256
+tls12 TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384 rsa-2048 \
+    ECDHE-RSA-AES256-GCM-SHA384
+tls12 TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256 rsa-2048 \
+    ECDHE-RSA-CHACHA20-POLY1305
+tls12 TLS_ECDHE_ECDSA_WITH_AES_128_CCM ecdsa-p256 ECDHE-ECDSA-AES128-CCM
+tls12 TLS_ECDHE_ECDSA_WITH_AES_256_CCM ecdsa-p256 ECDHE-ECDSA-AES256-CCM
+tls12 TLS_ECDHE_ECDSA_WITH_AES_128_CCM_8 ecdsa-p256 \
+    'ECDHE-ECDSA-AES128-CCM8:@SECLEVEL=0'
+tls12 TLS_ECDHE_ECDSA_WITH_AES_256_CCM_8 ecdsa-p256 \
+    'ECDHE-ECDSA-AES256-CCM8:@SECLEVEL=0'
+
+echo "all suites interoperate with $(openssl version)"
