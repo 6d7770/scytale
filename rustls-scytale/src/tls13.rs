@@ -16,7 +16,7 @@ use rustls::crypto::cipher::{
 use rustls::enums::{ContentType, ProtocolVersion};
 use rustls::version::TLS13_VERSION;
 
-use crate::aead::{Algorithm, SealingKey, TAG_LEN};
+use crate::aead::{Algorithm, SealingKey};
 use crate::{hash, hkdf, quic};
 
 /// TLS13_AES_128_GCM_SHA256.
@@ -61,21 +61,57 @@ pub static TLS13_CHACHA20_POLY1305_SHA256: &Tls13CipherSuite =
         quic: Some(&quic::CHACHA20_POLY1305),
     };
 
+/// TLS13_AES_128_CCM_SHA256.
+///
+/// In [`ALL_TLS13_CIPHER_SUITES`](crate::ALL_TLS13_CIPHER_SUITES) but
+/// not the defaults: nothing on the open web negotiates it; it is
+/// for the constrained-device profiles that ask for AES-CCM.
+pub static TLS13_AES_128_CCM_SHA256: &Tls13CipherSuite = &Tls13CipherSuite {
+    common: CipherSuiteCommon {
+        suite: CipherSuite::TLS13_AES_128_CCM_SHA256,
+        hash_provider: &hash::SHA256,
+        // CCM runs AES twice per block, so the bound that gives
+        // AES-GCM 2^24 full records gives CCM 2^23.
+        confidentiality_limit: 1 << 23,
+    },
+    protocol_version: TLS13_VERSION,
+    hkdf_provider: &hkdf::HKDF_SHA256,
+    aead_alg: &Aead(Algorithm::Aes128Ccm),
+    quic: Some(&quic::AES_128_CCM),
+};
+
+/// TLS13_AES_128_CCM_8_SHA256: AES-128-CCM with an 8-byte tag.
+///
+/// A forgery succeeds with probability 2^-64 a try rather than
+/// 2^-128. That is the trade constrained-device profiles make for
+/// eight bytes a record; TLS ends the connection at the first
+/// failure, so tries do not accumulate under one key. RFC 9001
+/// forbids it in QUIC, so it has no QUIC protection.
+///
+/// Neither in the defaults nor in
+/// [`ALL_TLS13_CIPHER_SUITES`](crate::ALL_TLS13_CIPHER_SUITES): a
+/// provider offers or accepts it only where a program names it.
+pub static TLS13_AES_128_CCM_8_SHA256: &Tls13CipherSuite = &Tls13CipherSuite {
+    common: CipherSuiteCommon {
+        suite: CipherSuite::TLS13_AES_128_CCM_8_SHA256,
+        hash_provider: &hash::SHA256,
+        confidentiality_limit: 1 << 23,
+    },
+    protocol_version: TLS13_VERSION,
+    hkdf_provider: &hkdf::HKDF_SHA256,
+    aead_alg: &Aead(Algorithm::Aes128Ccm8),
+    quic: None,
+};
+
 struct Aead(Algorithm);
 
 impl Tls13AeadAlgorithm for Aead {
     fn encrypter(&self, key: AeadKey, iv: Iv) -> Box<dyn MessageEncrypter> {
-        Box::new(Protection {
-            key: self.0.key(key.as_ref()),
-            iv,
-        })
+        Box::new(Protection::new(self.0, key, iv))
     }
 
     fn decrypter(&self, key: AeadKey, iv: Iv) -> Box<dyn MessageDecrypter> {
-        Box::new(Protection {
-            key: self.0.key(key.as_ref()),
-            iv,
-        })
+        Box::new(Protection::new(self.0, key, iv))
     }
 
     fn key_len(&self) -> usize {
@@ -97,6 +133,13 @@ impl Tls13AeadAlgorithm for Aead {
             Algorithm::ChaCha20Poly1305 => {
                 ConnectionTrafficSecrets::Chacha20Poly1305 { key, iv }
             }
+            // rustls has no form for CCM keys to be handed on in.
+            Algorithm::Aes128Ccm
+            | Algorithm::Aes256Ccm
+            | Algorithm::Aes128Ccm8
+            | Algorithm::Aes256Ccm8 => {
+                return Err(UnsupportedOperationError);
+            }
         })
     }
 }
@@ -106,6 +149,17 @@ impl Tls13AeadAlgorithm for Aead {
 struct Protection {
     key: Option<SealingKey>,
     iv: Iv,
+    tag_len: usize,
+}
+
+impl Protection {
+    fn new(algorithm: Algorithm, key: AeadKey, iv: Iv) -> Self {
+        Protection {
+            key: algorithm.key(key.as_ref()),
+            iv,
+            tag_len: algorithm.tag_len(),
+        }
+    }
 }
 
 impl MessageEncrypter for Protection {
@@ -126,7 +180,7 @@ impl MessageEncrypter for Protection {
         let tag = key
             .seal(&nonce, &make_tls13_aad(total), buf.as_mut())
             .map_err(|_| Error::EncryptError)?;
-        buf.extend_from_slice(&tag);
+        buf.extend_from_slice(tag.as_ref());
         // Every protected record claims to be TLS 1.2 application
         // data (RFC 8446 section 5.1).
         Ok(EncodedMessage::new(
@@ -137,7 +191,7 @@ impl MessageEncrypter for Protection {
     }
 
     fn encrypted_payload_len(&self, payload_len: usize) -> usize {
-        payload_len + 1 + TAG_LEN
+        payload_len + 1 + self.tag_len
     }
 }
 

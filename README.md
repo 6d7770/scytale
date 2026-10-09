@@ -611,8 +611,9 @@ It offers X25519MLKEM768 as its first key share, accepts and serves
 ML-DSA certificates, and has HPKE for Encrypted Client Hello.
 rustls's own API test suite and BoGo, BoringSSL's TLS conformance
 runner, pass with it as the provider
-(`scripts/test-rustls-downstream`). Its README says which rustls it
-works with and where it differs.
+(`scripts/test-rustls-downstream`), and it interoperates with
+OpenSSL over every suite it has (`scripts/test-openssl-interop`).
+Its README says which rustls it works with and where it differs.
 
 ### From a shell
 
