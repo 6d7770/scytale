@@ -5,19 +5,22 @@
 //! another implementation reads every record this one writes.
 //!
 //! ```text
-//! interop server PORT SUITE CERT.der KEY.pkcs8.der
-//! interop client PORT SUITE CA.der
+//! interop server PORT SUITE CERT.der KEY.pkcs8.der [GROUP]
+//! interop client PORT SUITE CA.der [GROUP]
 //! ```
 //!
 //! SUITE is the name rustls prints, such as
 //! `TLS13_AES_128_CCM_SHA256`; every suite the crate has is
-//! accepted, the CCM_8 ones included.
+//! accepted, the CCM_8 ones included. GROUP, likewise, is a key
+//! exchange group by rustls's name; given, it is the only group, and
+//! the run fails unless it is the one negotiated.
 
 use std::error::Error;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
 
+use rustls::crypto::kx::SupportedKxGroup;
 use rustls::crypto::{CryptoProvider, Identity};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use rustls::{
@@ -53,12 +56,25 @@ fn suite(name: &str) -> Option<SupportedCipherSuite> {
     .find(|s| format!("{:?}", s.suite()) == name)
 }
 
-/// The default provider with `suite` as its only suite, so that the
-/// handshake cannot settle on another.
+/// Every key exchange group, by the name rustls gives it.
+fn group(name: &str) -> Option<&'static dyn SupportedKxGroup> {
+    rustls_scytale::ALL_KX_GROUPS
+        .iter()
+        .copied()
+        .find(|g| format!("{:?}", g.name()) == name)
+}
+
+/// The default provider with `suite` as its only suite, and `group`
+/// as its only group if one is given, so that the handshake cannot
+/// settle on another.
 fn provider(
     suite: SupportedCipherSuite,
+    group: Option<&'static dyn SupportedKxGroup>,
 ) -> Result<Arc<CryptoProvider>, Box<dyn Error>> {
-    let base = rustls_scytale::DEFAULT_PROVIDER;
+    let mut base = rustls_scytale::DEFAULT_PROVIDER;
+    if let Some(group) = group {
+        base.kx_groups = vec![group].into();
+    }
     Ok(Arc::new(match suite {
         SupportedCipherSuite::Tls13(s) => CryptoProvider {
             tls13_cipher_suites: vec![s].into(),
@@ -74,11 +90,12 @@ fn provider(
     }))
 }
 
-/// Sends `line`, reads one back, and checks the suite.
+/// Sends `line`, reads one back, and checks the suite and group.
 fn talk(
     conn: &mut impl Connection,
     sock: &mut TcpStream,
     suite: SupportedCipherSuite,
+    group: Option<&'static dyn SupportedKxGroup>,
     line: &str,
 ) -> Result<String, Box<dyn Error>> {
     let mut input = VecInput::default();
@@ -90,6 +107,12 @@ fn talk(
     let got = conn.negotiated_cipher_suite();
     if got != Some(suite) {
         return Err(format!("negotiated {got:?}").into());
+    }
+    if let Some(group) = group {
+        let got = conn.negotiated_key_exchange_group().map(|g| g.name());
+        if got != Some(group.name()) {
+            return Err(format!("negotiated {got:?}").into());
+        }
     }
     conn.send_close_notify();
     let mut input = VecInput::default();
@@ -103,7 +126,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         return Err(USAGE.into());
     };
     let suite = suite(name).ok_or(format!("no suite {name}"))?;
-    let provider = provider(suite)?;
+    let (files, group) = match files {
+        [files @ .., last] if group(last).is_some() => (files, group(last)),
+        _ => (files, None),
+    };
+    let provider = provider(suite, group)?;
     let reply = match (role.as_str(), files) {
         ("server", [cert, key]) => {
             let identity =
@@ -121,7 +148,13 @@ fn main() -> Result<(), Box<dyn Error>> {
             eprintln!("listening");
             let (mut sock, _) = listener.accept()?;
             let mut conn = ServerConnection::new(Arc::new(config))?;
-            talk(&mut conn, &mut sock, suite, "hello from rustls-scytale\n")?
+            talk(
+                &mut conn,
+                &mut sock,
+                suite,
+                group,
+                "hello from rustls-scytale\n",
+            )?
         }
         ("client", [ca]) => {
             let mut roots = RootCertStore::empty();
@@ -132,7 +165,13 @@ fn main() -> Result<(), Box<dyn Error>> {
             let mut sock = TcpStream::connect(("localhost", port.parse()?))?;
             let mut conn =
                 Arc::new(config).connect("localhost".try_into()?).build()?;
-            talk(&mut conn, &mut sock, suite, "hello from rustls-scytale\n")?
+            talk(
+                &mut conn,
+                &mut sock,
+                suite,
+                group,
+                "hello from rustls-scytale\n",
+            )?
         }
         _ => {
             return Err(USAGE.into());
