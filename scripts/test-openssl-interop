@@ -25,9 +25,11 @@ interop=$(pwd)/target/debug/examples/interop
 work=$(mktemp -d)
 # The servers started in the background, so that a failure does not
 # leave one holding the port. `jobs` is empty inside a trap in some
-# shells, so they are kept here instead.
+# shells, so they are kept here instead. A server that has already
+# exited makes `kill` fail, which under `set -e` would end the trap
+# there and become the script's status.
 pids=
-trap 'kill $pids 2>/dev/null; rm -rf "$work"' EXIT
+trap 'kill $pids 2>/dev/null || true; rm -rf "$work"' EXIT
 
 # OpenSSL wants PEM; the test data is DER.
 for dir in ecdsa-p256 rsa-2048; do
