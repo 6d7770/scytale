@@ -11,6 +11,10 @@
 # OpenSSL refuses the 8-byte-tag CCM_8 suites at its default
 # security level, so their runs lower it; nothing else does.
 #
+# Key exchange groups OpenSSL may lack, the post-quantum hybrids
+# before 3.5, are run where it has them and reported as skipped
+# where it does not.
+#
 # Needs `openssl` 3.0 or later on the path.
 #
 # Usage: scripts/test-openssl-interop
@@ -44,6 +48,10 @@ done
 
 port=8463
 
+# A key exchange group by rustls's name, for the provider's side to
+# insist on; empty for the default groups.
+group=
+
 # Waits up to ten seconds for a line in a server's output saying it
 # is listening, so the client does not start before it.
 wait_for() {
@@ -71,14 +79,14 @@ run() {
         > "$work/s_server.out" 2>&1 &
     pids=$!
     wait_for "$work/s_server.out" ACCEPT
-    "$interop" client "$port" "$suite" "$data/$dir/ca.der"
+    "$interop" client "$port" "$suite" "$data/$dir/ca.der" $group
     wait $pids
 
     # OpenSSL's client against the provider's server. The client
     # waits for the server to close rather than closing at the end of
     # its input, so that it reads the server's line first.
     "$interop" server "$port" "$suite" \
-        "$data/$dir/end.der" "$data/$dir/end.pkcs8.der" \
+        "$data/$dir/end.der" "$data/$dir/end.pkcs8.der" $group \
         2> "$work/server.err" &
     pids=$!
     wait_for "$work/server.err" listening
@@ -129,5 +137,20 @@ tls12 TLS_ECDHE_ECDSA_WITH_AES_128_CCM_8 ecdsa-p256 \
     'ECDHE-ECDSA-AES128-CCM8:@SECLEVEL=0'
 tls12 TLS_ECDHE_ECDSA_WITH_AES_256_CCM_8 ecdsa-p256 \
     'ECDHE-ECDSA-AES256-CCM8:@SECLEVEL=0'
+
+# group (rustls's name), OpenSSL's name for it
+kx() {
+    if openssl list -tls-groups 2>/dev/null | tr ':' '\n' |
+        grep -qx "$2"; then
+        group=$1
+        run TLS13_AES_256_GCM_SHA384 ecdsa-p256 -tls1_3 \
+            -ciphersuites TLS_AES_256_GCM_SHA384 -groups "$2"
+        group=
+    else
+        echo "$1: skipped, $(openssl version) does not have it" >&2
+    fi
+}
+
+kx secp384r1MLKEM1024 SecP384r1MLKEM1024
 
 echo "all suites interoperate with $(openssl version)"
