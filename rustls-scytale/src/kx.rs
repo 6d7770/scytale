@@ -57,6 +57,21 @@ pub static SECP256R1MLKEM768: &dyn SupportedKxGroup = &Hybrid {
     },
 };
 
+/// P-384 and ML-KEM-1024 together: the hybrid at the strength CNSA
+/// 2.0 asks for. Its client share is about 1.7 KB, so it is not a
+/// default; the classical part comes first, as for P-256.
+pub static SECP384R1MLKEM1024: &dyn SupportedKxGroup = &Hybrid {
+    classical: SECP384R1,
+    post_quantum: MLKEM1024,
+    name: NamedGroup::secp384r1MLKEM1024,
+    layout: HybridLayout {
+        classical_share_len: ecdh::p384::PUBLIC_KEY_SIZE,
+        post_quantum_client_share_len: ml_kem::ml_kem_1024::PUBLIC_KEY_SIZE,
+        post_quantum_server_share_len: ml_kem::ml_kem_1024::CIPHERTEXT_SIZE,
+        post_quantum_first: false,
+    },
+};
+
 fn invalid_share() -> Error {
     PeerMisbehaved::InvalidKeyShare.into()
 }
@@ -277,6 +292,7 @@ mod tests {
             MLKEM1024,
             X25519MLKEM768,
             SECP256R1MLKEM768,
+            SECP384R1MLKEM1024,
         ] {
             let client = group.start().unwrap().into_single();
             assert_eq!(client.group(), group.name());
@@ -333,8 +349,8 @@ mod tests {
         assert!(X25519MLKEM768.start_and_complete(short).is_err());
     }
 
-    /// The hybrids put the post-quantum part where the drafts say:
-    /// first for X25519MLKEM768, second for SECP256R1MLKEM768.
+    /// The hybrids put the post-quantum part where the draft says:
+    /// first for X25519MLKEM768, second for the NIST curves.
     #[test]
     fn hybrid_share_layout() {
         let client = X25519MLKEM768.start().unwrap().into_single();
@@ -342,5 +358,12 @@ mod tests {
         let client = SECP256R1MLKEM768.start().unwrap().into_single();
         assert_eq!(client.pub_key().len(), 65 + 1184);
         assert_eq!(client.pub_key()[0], 0x04);
+        let client = SECP384R1MLKEM1024.start().unwrap().into_single();
+        assert_eq!(client.pub_key().len(), 97 + 1568);
+        assert_eq!(client.pub_key()[0], 0x04);
+        let server = SECP384R1MLKEM1024
+            .start_and_complete(client.pub_key())
+            .unwrap();
+        assert_eq!(server.pub_key.len(), 97 + 1568);
     }
 }

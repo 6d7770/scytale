@@ -38,8 +38,9 @@
 //!   and their headers (RFC 9001), so rustls's QUIC support runs on
 //!   this provider. RFC 9001 forbids the 8-byte tag in QUIC.
 //! - Key exchange: X25519MLKEM768 first, then X25519, P-256 and
-//!   P-384. SECP256R1MLKEM768, ML-KEM-768 and ML-KEM-1024 are in
-//!   [`ALL_KX_GROUPS`] for a program that asks for them.
+//!   P-384. SECP256R1MLKEM768, SECP384R1MLKEM1024 (the hybrid at
+//!   the strength CNSA 2.0 asks for), ML-KEM-768 and ML-KEM-1024 are
+//!   in [`ALL_KX_GROUPS`] for a program that asks for them.
 //! - Handshake signatures: ML-DSA-44, -65 and -87; ECDSA on P-256,
 //!   P-384 and P-521, each with its own hash; Ed25519; RSA-PSS.
 //! - Encrypted Client Hello: HPKE with DHKEM over X25519, P-256,
@@ -226,8 +227,8 @@ pub mod cipher_suite {
 /// The key exchange groups, one by one.
 pub mod kx_group {
     pub use crate::kx::{
-        MLKEM768, MLKEM1024, SECP256R1, SECP256R1MLKEM768, SECP384R1, X25519,
-        X25519MLKEM768,
+        MLKEM768, MLKEM1024, SECP256R1, SECP256R1MLKEM768, SECP384R1,
+        SECP384R1MLKEM1024, X25519, X25519MLKEM768,
     };
 }
 
@@ -250,6 +251,7 @@ pub static DEFAULT_KX_GROUPS: &[&dyn SupportedKxGroup] = &[
 pub static ALL_KX_GROUPS: &[&dyn SupportedKxGroup] = &[
     kx_group::X25519MLKEM768,
     kx_group::SECP256R1MLKEM768,
+    kx_group::SECP384R1MLKEM1024,
     kx_group::X25519,
     kx_group::SECP256R1,
     kx_group::SECP384R1,

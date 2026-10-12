@@ -63,8 +63,9 @@ localhost.
   packets and their headers (RFC 9001), so rustls's QUIC support
   runs on this provider. RFC 9001 forbids the 8-byte tag in QUIC.
 - **Key exchange:** X25519MLKEM768 first, then X25519, P-256 and
-  P-384. SECP256R1MLKEM768, ML-KEM-768 and ML-KEM-1024 are in
-  `ALL_KX_GROUPS` for a program that asks for them.
+  P-384. SECP256R1MLKEM768, SECP384R1MLKEM1024 (the hybrid at
+  the strength CNSA 2.0 asks for), ML-KEM-768 and ML-KEM-1024 are
+  in `ALL_KX_GROUPS` for a program that asks for them.
 - **Handshake signatures:** ML-DSA-44, -65 and -87; ECDSA on
   P-256, P-384 and P-521, each with its own hash; Ed25519; RSA-PSS.
 - **Encrypted Client Hello:** HPKE with DHKEM over X25519, P-256,
@@ -171,7 +172,8 @@ version, and a row here says so.
   HPKE test against the RFC 9180 vectors and against aws-lc-rs both
   ways, and BoGo, Encrypted Client Hello included, with no failures.
 - `scripts/test-openssl-interop` connects this crate to OpenSSL
-  over every suite it has, both ways. BoGo cannot reach the CCM
+  over every suite it has, both ways, and over SECP384R1MLKEM1024
+  where the OpenSSL has it (3.5 and later). BoGo cannot reach the CCM
   suites, since BoringSSL has none; here another implementation
   reads every record this one writes.
 - Both scripts run in CI on every push.
