@@ -28,7 +28,7 @@ and back.
 | `scytale sig sign` / `verify` | signatures | Ed25519, ECDSA, RSA-PSS, RSA PKCS#1 v1.5, ML-DSA, SLH-DSA |
 | `scytale kex agree` | a shared secret | X25519, ECDH |
 | `scytale kem encapsulate` / `decapsulate` | a shared secret carried in a ciphertext | ML-KEM |
-| `scytale pke encrypt` / `decrypt` | a short message under a public key | RSA-OAEP |
+| `scytale pke encrypt` / `decrypt` | a message under a public key: short for RSA-OAEP, any length for HPKE | RSA-OAEP, HPKE |
 | `scytale random` | bytes from the system-seeded generator | CTR_DRBG |
 | `scytale list` | every algorithm name, for a script to check | |
 

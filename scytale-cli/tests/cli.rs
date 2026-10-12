@@ -572,6 +572,139 @@ fn every_key_algorithm_signs_agrees_or_encapsulates() {
     }
 }
 
+/// HPKE: every suite round-trips with its own key type, under info
+/// and additional data that must match, and the message is laid out
+/// as enc, ciphertext, tag.
+#[test]
+fn hpke_round_trips_every_suite() {
+    let d = dir("hpke");
+    let message = b"a message of no particular length";
+    for (kem, enc_len) in [
+        ("x25519", 32),
+        ("ecdh-p256", 65),
+        ("ecdh-p384", 97),
+        ("ecdh-p521", 133),
+    ] {
+        let private = d.join(format!("{kem}.pem"));
+        let public = d.join(format!("{kem}.pub"));
+        let (private, public) =
+            (private.to_str().unwrap(), public.to_str().unwrap());
+        ok(&["key", "generate", kem, "-o", private], b"");
+        ok(&["key", "public", private, "-o", public], b"");
+        for kdf in ["sha256", "sha384", "sha512"] {
+            for aead in ["aes-128-gcm", "aes-256-gcm", "chacha20-poly1305"] {
+                let name = format!("hpke-{kem}-{kdf}-{aead}");
+                let name = name.as_str();
+                let sealed = ok(
+                    &[
+                        "pke", "encrypt", name, "-p", public, "--info",
+                        "str:app", "--aad", "str:hdr",
+                    ],
+                    message,
+                );
+                assert_eq!(sealed.len(), enc_len + message.len() + 16);
+                let open = [
+                    "pke", "decrypt", name, "-k", private, "--info", "str:app",
+                    "--aad", "str:hdr",
+                ];
+                assert_eq!(ok(&open, &sealed), message, "{name}");
+                // Wrong info, wrong additional data, a flipped bit in
+                // the encapsulation or the tag, or a message cut short:
+                // each does not decrypt.
+                let mut wrong = open;
+                wrong[6] = "str:apq";
+                fails(&wrong, &sealed, 1);
+                let mut wrong = open;
+                wrong[8] = "str:hdq";
+                fails(&wrong, &sealed, 1);
+                for at in [enc_len - 1, sealed.len() - 1] {
+                    let mut bad = sealed.clone();
+                    bad[at] ^= 1;
+                    fails(&open, &bad, 1);
+                }
+                fails(&open, &sealed[..enc_len + 15], 1);
+            }
+        }
+    }
+    // Both inputs are empty without their options.
+    let name = "hpke-x25519-sha256-aes-128-gcm";
+    let public = d.join("x25519.pub");
+    let private = d.join("x25519.pem");
+    let (public, private) =
+        (public.to_str().unwrap(), private.to_str().unwrap());
+    let sealed = ok(&["pke", "encrypt", name, "-p", public], message);
+    let open = ["pke", "decrypt", name, "-k", private];
+    assert_eq!(ok(&open, &sealed), message);
+    // A key of another type than the name says is refused, as are
+    // RSA-OAEP's option on HPKE and HPKE's on RSA-OAEP.
+    let p256 = d.join("ecdh-p256.pub");
+    let p256 = p256.to_str().unwrap();
+    fails(&["pke", "encrypt", name, "-p", p256], message, 2);
+    fails(
+        &["pke", "encrypt", name, "-p", public, "--label", "str:l"],
+        message,
+        2,
+    );
+    let rsa = d.join("rsa.pem");
+    let rsa = rsa.to_str().unwrap();
+    ok(&["key", "generate", "rsa-2048", "-o", rsa], b"");
+    fails(
+        &[
+            "pke",
+            "encrypt",
+            "rsa-oaep-sha256",
+            "-p",
+            rsa,
+            "--info",
+            "str:i",
+        ],
+        message,
+        2,
+    );
+}
+
+/// RFC 9180 appendix A.1.1, X25519 with HKDF-SHA256 and AES-128-GCM:
+/// the recipient's key made into a PEM file, and the first message
+/// of the vector, as `enc` followed by the ciphertext, decrypted.
+#[test]
+fn hpke_decrypts_the_rfc9180_vector() {
+    use scytale::Key;
+    use scytale::kex::x25519::PrivateKey;
+
+    let d = dir("hpke-vector");
+    let secret: [u8; 32] = hex_bytes(
+        "4612c550263fc8ad58375df3f557aac531d26850903e55a9f23f21d8534e8ac8",
+    )
+    .try_into()
+    .unwrap();
+    let private = d.join("recipient.pem");
+    fs::write(&private, PrivateKey::new(&Key::from(secret)).pem_bytes())
+        .unwrap();
+    let mut sealed = hex_bytes(
+        "37fda3567bdbd628e88668c3c8d7e97d1d1253b6d4ea6d44c150f741f1bf4431",
+    );
+    sealed.extend(hex_bytes(
+        "f938558b5d72f1a23810b4be2ab4f84331acc02fc97babc53a52ae8218a355a9\
+         6d8770ac83d07bea87e13c512a",
+    ));
+    let info = format!("hex:{}", "4f6465206f6e2061204772656369616e2055726e");
+    let message = ok(
+        &[
+            "pke",
+            "decrypt",
+            "hpke-x25519-sha256-aes-128-gcm",
+            "-k",
+            private.to_str().unwrap(),
+            "--info",
+            &info,
+            "--aad",
+            "hex:436f756e742d30",
+        ],
+        &sealed,
+    );
+    assert_eq!(message, b"Beauty is truth, truth beauty");
+}
+
 #[test]
 fn list_names_only_what_runs() {
     let all = text(ok(&["list"], b""));
@@ -741,7 +874,8 @@ fn the_manual_covers_the_help() {
             || name.starts_with("hmac-")
             || name.starts_with("ecdsa-")
             || name.starts_with("rsa-")
-            || name.starts_with("slh-dsa-");
+            || name.starts_with("slh-dsa-")
+            || name.starts_with("hpke-");
         if !patterned && !manual.contains(name) {
             missing.push(name.to_owned());
         }

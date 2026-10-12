@@ -689,6 +689,8 @@ nothing, rather than an error, as FIPS 203 requires.
 .I scheme
 .RB { "\-p public" | "\-k private" }
 .RI [ "\-\-label value" ]
+.RI [ "\-\-info value" ]
+.RI [ "\-\-aad value" ]
 .RI [ "\-o file" ]
 .RI [ file ]
 .PP
@@ -698,8 +700,53 @@ for any of the plain hashes: a short message, at most the modulus
 length less twice the hash length less two bytes, under an RSA public
 key. The label is empty without
 .BR \-\-label ,
-and must match to decrypt. A ciphertext that does not decrypt exits
-with status 1 and says nothing more.
+and must match to decrypt.
+.PP
+HPKE (RFC 9180, base mode) under
+.BI hpke\- kem \- kdf \- aead\fR:\fP
+a message of any length under an
+.BR x25519 ,
+.BR ecdh\-p256 ,
+.B ecdh\-p384
+or
+.B ecdh\-p521
+key, the
+.I kem
+being the key's type; the
+.I kdf
+one of
+.BR sha256 ,
+.B sha384
+and
+.BR sha512 ;
+and the
+.I aead
+one of
+.BR aes\-128\-gcm ,
+.B aes\-256\-gcm
+and
+.BR chacha20\-poly1305 .
+The output is the encapsulated key, then the ciphertext, then a
+16-byte tag; the encapsulated key is 32 bytes under
+.BR x25519 ,
+65 under
+.BR ecdh\-p256 ,
+97 under
+.B ecdh\-p384
+and 133 under
+.BR ecdh\-p521 .
+.B \-\-info
+binds the message to a context, such as an application's name and
+version, and
+.B \-\-aad
+is authenticated alongside it; both are empty without the option and
+must match to decrypt. Set
+.B \-\-info
+wherever one key serves more than one purpose. One message is sealed
+per call.
+.PP
+A ciphertext that does not decrypt, under either scheme, exits with
+status 1 and says nothing more.
 .SH ALGORITHM NAMES
 .B scytale list
 prints every name, and
@@ -770,6 +817,18 @@ scytale key public me.pem \-o me.pub
 scytale kex agree x25519 \-k me.pem \-p peer.pub \-\-raw \-o shared.bin
 scytale kdf hkdf sha256 \-\-ikm file:shared.bin \-\-salt str:session\-1 \e
     \-\-info str:encrypt \-\-length 32
+.fi
+.PP
+Encrypt a file of any length to someone's public key, bound to the
+application, and decrypt it with the private key:
+.PP
+.nf
+scytale key generate x25519 \-o them.pem
+scytale key public them.pem \-o them.pub
+scytale pke encrypt hpke\-x25519\-sha256\-aes\-128\-gcm \-p them.pub \e
+    \-\-info str:backup\-v1 archive.tar \-o archive.sealed
+scytale pke decrypt hpke\-x25519\-sha256\-aes\-128\-gcm \-k them.pem \e
+    \-\-info str:backup\-v1 archive.sealed \-o archive.tar
 .fi
 .PP
 Read a key from a descriptor rather than the command line:

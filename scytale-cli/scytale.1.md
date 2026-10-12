@@ -419,12 +419,28 @@ rather than an error, as FIPS 203 requires.
 ## pke encrypt, pke decrypt
 
 **scytale pke** {**encrypt**\|**decrypt**} *scheme* {**-p public**\|**-k
-private**} \[*--label value*\] \[*-o file*\] \[*file*\]
+private**} \[*--label value*\] \[*--info value*\] \[*--aad value*\]
+\[*-o file*\] \[*file*\]
 
 RSA-OAEP under **rsa-oaep-***hash* for any of the plain hashes: a short
 message, at most the modulus length less twice the hash length less two
 bytes, under an RSA public key. The label is empty without **--label**,
-and must match to decrypt. A ciphertext that does not decrypt exits with
+and must match to decrypt.
+
+HPKE (RFC 9180, base mode) under **hpke-***kem***-***kdf***-***aead:* a
+message of any length under an **x25519**, **ecdh-p256**, **ecdh-p384**
+or **ecdh-p521** key, the *kem* being the key's type; the *kdf* one of
+**sha256**, **sha384** and **sha512**; and the *aead* one of
+**aes-128-gcm**, **aes-256-gcm** and **chacha20-poly1305**. The output
+is the encapsulated key, then the ciphertext, then a 16-byte tag; the
+encapsulated key is 32 bytes under **x25519**, 65 under **ecdh-p256**,
+97 under **ecdh-p384** and 133 under **ecdh-p521**. **--info** binds the
+message to a context, such as an application's name and version, and
+**--aad** is authenticated alongside it; both are empty without the
+option and must match to decrypt. Set **--info** wherever one key serves
+more than one purpose. One message is sealed per call.
+
+A ciphertext that does not decrypt, under either scheme, exits with
 status 1 and says nothing more.
 
 ## ALGORITHM NAMES
@@ -486,6 +502,16 @@ Agree a key with a peer and derive session keys from it:
     scytale kex agree x25519 -k me.pem -p peer.pub --raw -o shared.bin
     scytale kdf hkdf sha256 --ikm file:shared.bin --salt str:session-1 \
         --info str:encrypt --length 32
+
+Encrypt a file of any length to someone's public key, bound to the
+application, and decrypt it with the private key:
+
+    scytale key generate x25519 -o them.pem
+    scytale key public them.pem -o them.pub
+    scytale pke encrypt hpke-x25519-sha256-aes-128-gcm -p them.pub \
+        --info str:backup-v1 archive.tar -o archive.sealed
+    scytale pke decrypt hpke-x25519-sha256-aes-128-gcm -k them.pem \
+        --info str:backup-v1 archive.sealed -o archive.tar
 
 Read a key from a descriptor rather than the command line:
 
