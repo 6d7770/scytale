@@ -354,7 +354,11 @@ half, is refused with a message saying what it holds.
 \[**--raw-ecdsa**\] \[**--hex**\|**--raw**\] \[*-o file*\] \[*file*\]
 
 Signs the input with the private key in *private*, writing the signature
-as raw bytes without a flag.
+as raw bytes without a flag. Ed25519, ECDSA, ML-DSA and SLH-DSA
+signatures are hedged: the nonce their standards derive from the key and
+the message, with fresh random bytes mixed in, so signing the same input
+twice gives two signatures that both verify. RSA PKCS#1 v1.5 alone gives
+the same bytes every time.
 
 ## sig verify
 

@@ -18,7 +18,7 @@
 //! let key = PrivateKey::generate(&mut rng)?;
 //!
 //! // Made with the secret, checked with the public.
-//! let signature = key.sign(b"release v1.2");
+//! let signature = key.sign(&mut rng, b"release v1.2")?;
 //! let public = key.public_key();
 //! public.verify(b"release v1.2", &signature)?;
 //! assert!(public.verify(b"release v1.3", &signature).is_err());

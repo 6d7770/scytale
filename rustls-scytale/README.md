@@ -127,10 +127,13 @@ provider.tls12_cipher_suites.to_mut().extend([
 
 ## Where it differs
 
-- **ECDSA signatures are deterministic** (RFC 6979): the nonce is
-  derived from the key and the message digest, with HMAC over the
-  signing hash (SHA-256 for P-256, SHA-384 for P-384, SHA-512 for
-  P-521), so a weak or failed random source cannot expose the key.
+- **ECDSA and Ed25519 signatures are hedged**
+  (draft-irtf-cfrg-det-sigs-with-noise-05): the nonce is RFC 6979's
+  or RFC 8032's, derived from the key and the message digest, with
+  fresh random bytes mixed in. A weak or failed random source cannot
+  expose the key, as with the deterministic nonce, and a fault
+  injected into one signature cannot be compared with another of the
+  same message, which a deterministic nonce allows.
 - **ML-DSA is preferred**, so a peer that holds an ML-DSA
   certificate beside a classical one is asked for the post-quantum
   one; a peer with one certificate signs with it whatever the

@@ -84,7 +84,7 @@ excluded.
 | Ed25519 signing | `sig/ed25519.rs` | fixed ladder of doublings and additions, result by mask; same field |
 | Ed25519 verification | `sig/ed25519.rs::mul_add_base_vartime` | variable time, on public data only: one pass over both scalars in signed digits, with an addition for each nonzero digit, so which additions happen and from which entries is what the scalars are. See the table below |
 | ECDH P-256, P-384, P-521 | `math/ec/`, `math/montgomery/` | the fixed-base multiplication reads per-window tables of affine multiples for P-256 (37 windows of 64 entries, signed seven-bit Booth digits, no doublings) and the complete projective formulas (Renes-Costello-Batina) over the combs for P-384 and P-521, so neither has a special case for doubling or the identity; the variable-base one, which is where a secret scalar meets an untrusted point, runs in Jacobian coordinates over signed five-bit windows (Booth), where the addition is not complete and every case it misses is settled by a mask and not a branch: either point being the identity takes the other, opposite points the formula handles itself, and two equal points cannot arise above the lowest window, which the module documents; at the lowest they can, for a scalar just below the order, and that window's addition takes the double alongside, chosen by the same mask. Every table read scans the whole table, and the digit only chooses and negates; on x86-64 the 64-entry fixed-base scan is an AVX2 loop in `math/ec/x86_64.rs` that reads every entry whatever the digit, and elsewhere the compiler makes the same scan into 128-bit masked selects. Inversion and square roots are exponentiations whose exponent is a public constant, so their windows are slid over it while the value stays out of the timing; on x86-64 with ADX the field product and square are the assembly in `math/montgomery/x86_64.rs`, and on AArch64 the assembly in `math/montgomery/aarch64.rs`, at P-256's and P-384's widths, while P-521 takes the portable product, which is the same masked limb arithmetic without the carry-chain instructions; and for P-256 the point doubling, both additions and the inversion chain are single assembly blocks, in `math/ec/x86_64.rs` and `math/ec/aarch64.rs`, each a fixed instruction sequence whose subtractions are chosen by mask
-| ECDSA signing | `sig/ecdsa.rs` over the same | RFC 6979 nonce, so no randomness is consumed and no bias is possible; the one data-dependent branch is the retry on a zero `r` or `s`, probability 2^-256 |
+| ECDSA signing | `sig/ecdsa.rs` over the same | RFC 6979 nonce, hedged with fresh random bytes as draft-irtf-cfrg-det-sigs-with-noise-05 lays them out, or deterministic; either way the key and digest are in the nonce, so a weak generator cannot bias it; the one data-dependent branch is the retry on a zero `r` or `s`, probability 2^-256 |
 | ECDSA verification | `math/ec/mod.rs::mul_add_vartime` | variable time, on public data only: one pass over the public key's scalar in signed five-bit digits, with an addition only where a digit is nonzero, and the base point's multiple read from the static per-window table by an index the digit gives, both of which are what the scalars are. See the table below
 | RSA private exponentiation | `math/limbs/mod.rs::modexp` | fixed 4-bit windows over the exponent's full limb length; the 16-entry table is scanned whole on every read; the final Montgomery subtraction is chosen by mask; on x86-64 with ADX the multiply is the four-row assembly block in `math/limbs/x86_64.rs`, whose instruction and memory sequence depends only on the length |
 | RSA CRT | `math/rsa.rs` | two `modexp` calls and Garner's recombination, all masked; every CRT signature is verified with the public exponent before release, so a fault in one half cannot leak a prime (Boneh-DeMillo-Lipton) |
@@ -158,11 +158,16 @@ without adding those countermeasures yourself.
 **Fault injection.** Not defended, with one exception: every RSA CRT
 signature is checked against the public key before release, because
 a single faulted half-exponentiation would otherwise reveal a prime.
-Nothing else is double-checked. ML-DSA and SLH-DSA are hedged by
-default, which is a partial fault defence the standards call for:
-a fault in a hedged signature does not reveal the key the way it does
-in a deterministic one. Ed25519 is deterministic, as RFC 8032
-defines it, and so is exposed to fault attacks on the nonce.
+Nothing else is double-checked. Every signature scheme's `sign` is
+hedged, a partial fault defence: ML-DSA and SLH-DSA as FIPS 204 and
+205 define it, and ECDSA and Ed25519 as
+draft-irtf-cfrg-det-sigs-with-noise-05 does, mixing fresh random
+bytes into the deterministic nonce. A fault in a hedged signature
+does not reveal the key the way it does in a deterministic one,
+since no two signatures share the nonce computation for the fault
+to be compared across. The `sign_deterministic` forms, which test
+vectors and repeatable formats need, are exposed to fault attacks on
+the nonce, as RFC 6979 and RFC 8032 define them.
 
 ## Memory safety
 
@@ -277,12 +282,12 @@ the library does not do it for you.**
   generator a caller holds has a source to reseed from.
 - The state is zeroized on drop.
 - A repeated output is a repeated nonce, and a repeated GCM or
-  ChaCha20-Poly1305 nonce loses the key. Ed25519, RFC 6979 ECDSA and
-  deterministic ML-DSA and SLH-DSA draw no randomness when signing
-  and are unaffected; hedged ML-DSA and SLH-DSA, RSA-PSS salts and
-  OAEP seeds degrade to their deterministic security, which is still
-  sound; RSA and ML-KEM key generation and ML-KEM encapsulation under
-  a duplicated generator produce duplicated keys and shared secrets.
+  ChaCha20-Poly1305 nonce loses the key. The deterministic signing
+  forms draw no randomness and are unaffected; hedged Ed25519,
+  ECDSA, ML-DSA and SLH-DSA, RSA-PSS salts and OAEP seeds degrade to
+  their deterministic security, which is still sound; RSA and ML-KEM
+  key generation and ML-KEM encapsulation under a duplicated
+  generator produce duplicated keys and shared secrets.
 
 ## Secret-dependent allocation
 
@@ -334,8 +339,8 @@ and this is what it promises about them.
   operating system, so no generator state is held between calls and
   nothing a `fork` or a snapshot copies can repeat; the rule in *RNG
   across fork* does not apply to the provider.
-- **Signing.** ECDSA is deterministic (RFC 6979); RSA-PSS salts and
-  ML-DSA's hedging come from the randomness above. RSA keys must be
+- **Signing.** ECDSA, Ed25519 and ML-DSA are hedged, and RSA-PSS
+  salted, from the randomness above. RSA keys must be
   2048 to 8192 bits.
 - **Allocation.** Unlike scytale, the provider allocates: rustls
   holds keys behind `Box` and `Arc`, so traffic keys, signing keys

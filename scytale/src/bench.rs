@@ -1195,7 +1195,7 @@ fn sig_ops(options: &Options) -> bool {
     let ed_secret = KEY256;
     let ed_key = ed25519::PrivateKey::new(&Key::from(ed_secret));
     let ed_public = ed_key.public_key().bytes();
-    let ed_signature = ed_key.sign(MESSAGE);
+    let ed_signature = ed_key.sign_deterministic(MESSAGE);
     let (Ok(p256), Ok(p384), Ok(p521)) = (
         ecdsa::p256::PrivateKey::generate(&mut build),
         ecdsa::p384::PrivateKey::generate(&mut build),
@@ -1204,9 +1204,9 @@ fn sig_ops(options: &Options) -> bool {
         return false;
     };
     let (Ok(sig256), Ok(sig384), Ok(sig521)) = (
-        p256.sign::<sha2::Sha256>(MESSAGE),
-        p384.sign::<sha2::Sha384>(MESSAGE),
-        p521.sign::<sha2::Sha512>(MESSAGE),
+        p256.sign_deterministic::<sha2::Sha256>(MESSAGE),
+        p384.sign_deterministic::<sha2::Sha384>(MESSAGE),
+        p521.sign_deterministic::<sha2::Sha512>(MESSAGE),
     ) else {
         return false;
     };
@@ -1228,7 +1228,7 @@ fn sig_ops(options: &Options) -> bool {
         (
             "ed25519-sign",
             Box::new(|| {
-                black_box(ed_key.sign(MESSAGE));
+                black_box(ed_key.sign_deterministic(MESSAGE));
             }),
         ),
         (
@@ -1247,7 +1247,8 @@ fn sig_ops(options: &Options) -> bool {
         (
             "ecdsa-p256-sign",
             Box::new(|| {
-                black_box(p256.sign::<sha2::Sha256>(MESSAGE)).ok();
+                black_box(p256.sign_deterministic::<sha2::Sha256>(MESSAGE))
+                    .ok();
             }),
         ),
         (
@@ -1268,7 +1269,8 @@ fn sig_ops(options: &Options) -> bool {
         (
             "ecdsa-p384-sign",
             Box::new(|| {
-                black_box(p384.sign::<sha2::Sha384>(MESSAGE)).ok();
+                black_box(p384.sign_deterministic::<sha2::Sha384>(MESSAGE))
+                    .ok();
             }),
         ),
         (
@@ -1289,7 +1291,8 @@ fn sig_ops(options: &Options) -> bool {
         (
             "ecdsa-p521-sign",
             Box::new(|| {
-                black_box(p521.sign::<sha2::Sha512>(MESSAGE)).ok();
+                black_box(p521.sign_deterministic::<sha2::Sha512>(MESSAGE))
+                    .ok();
             }),
         ),
         (

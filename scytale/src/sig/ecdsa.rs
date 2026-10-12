@@ -18,12 +18,23 @@
 //!
 //! # Nonces
 //!
-//! The nonce is derived, by RFC 6979, from the key and the digest
-//! through HMAC over the signature's own hash, so signing consumes
-//! no randomness and the same key and message always give the same
-//! signature. A random nonce is where ECDSA has failed in practice:
-//! one repeated nonce, or a few biased bits of one, and the key is
-//! recovered from the signatures. There is no random-nonce path.
+//! A random nonce is where ECDSA has failed in practice: one
+//! repeated nonce, or a few biased bits of one, and the key is
+//! recovered from the signatures. So the nonce is derived, by
+//! RFC 6979, from the key and the digest through HMAC over the
+//! signature's own hash, and there is no purely random path.
+//!
+//! [`sign`](p256::PrivateKey::sign) hedges that derivation: it mixes
+//! fresh random bytes in as well, as
+//! draft-irtf-cfrg-det-sigs-with-noise-05 lays them out. A fault or
+//! a power trace that would recover the key from two deterministic
+//! signatures of one message no longer can, since their nonces are
+//! no longer the same computation; and a weak random source leaves
+//! the nonce as good as RFC 6979's, never worse.
+//! [`sign_deterministic`](p256::PrivateKey::sign_deterministic) is
+//! RFC 6979 alone, the same key and message always giving the same
+//! signature, for test vectors and the formats that need repeatable
+//! output.
 //!
 //! # Signature forms
 //!
@@ -41,7 +52,7 @@
 //! # fn main() -> Result<(), scytale::Error> {
 //! let mut rng = CtrDrbg::from_system()?;
 //! let key = PrivateKey::generate(&mut rng)?;
-//! let signature = key.sign::<Sha256>(b"the message")?;
+//! let signature = key.sign::<Sha256, _>(&mut rng, b"the message")?;
 //!
 //! // The public key travels as SEC 1 bytes, or as DER or PEM.
 //! let public = PublicKey::try_from_sec1(&key.public_key().sec1_bytes())?;
@@ -64,6 +75,7 @@
 
 use crate::BlockType;
 use crate::hash::Hash;
+use zeroize::Zeroize;
 
 macro_rules! ecdsa_curve {
     (
@@ -79,21 +91,42 @@ macro_rules! ecdsa_curve {
         pub const SIGNATURE_SIZE: usize = 2 * KEY_SIZE;
 
         impl PrivateKey {
-            /// Signs `message` under `H`, with the nonce RFC 6979
-            /// derives from the key and the digest: the same inputs
-            /// always give the same signature.
+            /// Signs `message` under `H`, with RFC 6979's nonce
+            /// hedged by `KEY_SIZE` bytes from `rng`: see the
+            /// module's *Nonces*.
             ///
             /// `H` is the hash the verifier will use; P-256 pairs
             /// with SHA-256, P-384 with SHA-384 and P-521 with
             /// SHA-512 almost everywhere, though any hash is
             /// accepted.
-            pub fn sign<H: Hash + Clone + BlockType + Default>(
+            pub fn sign<H: Hash + Clone + BlockType + Default, R: Random>(
+                &self,
+                rng: &mut R,
+                message: &[u8],
+            ) -> Result<[u8; SIGNATURE_SIZE], Error> {
+                let mut noise = [0u8; KEY_SIZE];
+                rng.fill(&mut noise)?;
+                let e = Engine::new(&$constants);
+                let mut out = [0u8; SIGNATURE_SIZE];
+                let signed =
+                    self.secret.sign::<H>(&e, message, Some(&noise), &mut out);
+                noise.zeroize();
+                signed?;
+                Ok(out)
+            }
+
+            /// Signs `message` under `H`, with the nonce RFC 6979
+            /// derives from the key and the digest alone: the same
+            /// inputs always give the same signature. For test
+            /// vectors and repeatable output; [`sign`](Self::sign)
+            /// otherwise.
+            pub fn sign_deterministic<H: Hash + Clone + BlockType + Default>(
                 &self,
                 message: &[u8],
             ) -> Result<[u8; SIGNATURE_SIZE], Error> {
                 let e = Engine::new(&$constants);
                 let mut out = [0u8; SIGNATURE_SIZE];
-                self.secret.sign::<H>(&e, message, &mut out)?;
+                self.secret.sign::<H>(&e, message, None, &mut out)?;
                 Ok(out)
             }
         }
@@ -163,6 +196,7 @@ mod tests {
     use super::p521;
     use crate::Error;
     use crate::hash::sha2::{Sha256, Sha384, Sha512};
+    use crate::random::CtrDrbg;
 
     fn unhex<'a>(hex: &str, buf: &'a mut [u8]) -> &'a [u8] {
         let hex = hex.as_bytes();
@@ -366,10 +400,22 @@ mod tests {
         assert!(public.verify::<Sha512>(b"the messagf", &signature).is_err());
         assert!(public.verify::<Sha384>(b"the message", &signature).is_err());
 
-        // Our own signatures verify, and are deterministic.
-        let ours = key.sign::<Sha512>(b"the message").unwrap();
+        // Our own signatures verify. The deterministic ones repeat;
+        // the hedged ones verify too but do not.
+        let ours = key.sign_deterministic::<Sha512>(b"the message").unwrap();
         public.verify::<Sha512>(b"the message", &ours).unwrap();
-        assert_eq!(ours, key.sign::<Sha512>(b"the message").unwrap());
+        assert_eq!(
+            ours,
+            key.sign_deterministic::<Sha512>(b"the message").unwrap()
+        );
+        let mut rng = CtrDrbg::from_system().unwrap();
+        let hedged = key.sign::<Sha512, _>(&mut rng, b"the message").unwrap();
+        public.verify::<Sha512>(b"the message", &hedged).unwrap();
+        assert_ne!(hedged, ours);
+        assert_ne!(
+            hedged,
+            key.sign::<Sha512, _>(&mut rng, b"the message").unwrap()
+        );
         assert_eq!(p521::SIGNATURE_SIZE, 132);
     }
 
@@ -440,8 +486,8 @@ mod tests {
             again.public_key().sec1_bytes(),
             key.public_key().sec1_bytes()
         );
-        let sig = key.sign::<Sha384>(b"x").unwrap();
-        assert_eq!(again.sign::<Sha384>(b"x").unwrap(), sig);
+        let sig = key.sign_deterministic::<Sha384>(b"x").unwrap();
+        assert_eq!(again.sign_deterministic::<Sha384>(b"x").unwrap(), sig);
         let mut out = [0u8; 512];
         let n = key.der_bytes(&mut out).unwrap();
         let back = p384::PrivateKey::try_from_der(&out[..n]).unwrap();
@@ -454,7 +500,7 @@ mod tests {
         // The DER signature form: a leading zero and a top bit each
         // change the length, so several signatures go through.
         for i in 0..8u8 {
-            let sig = key.sign::<Sha384>(&[i]).unwrap();
+            let sig = key.sign::<Sha384, _>(&mut rng, &[i]).unwrap();
             let n = p384::signature_der(&sig, &mut out).unwrap();
             assert!(n <= p384::SIGNATURE_SIZE + 8);
             assert_eq!(p384::signature_from_der(&out[..n]), Ok(sig));

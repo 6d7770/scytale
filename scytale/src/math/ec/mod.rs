@@ -1583,11 +1583,14 @@ impl<const L: usize> Secret<L> {
     }
 
     /// An ECDSA signature over `message`, `r || s` into `out` of
-    /// twice the curve's width, with the nonce from RFC 6979.
+    /// twice the curve's width, with the nonce from RFC 6979; hedged,
+    /// as draft-irtf-cfrg-det-sigs-with-noise-05 section 4 has it,
+    /// when `noise` holds the curve's width of random bytes.
     pub(crate) fn sign<H: Hash + Clone + BlockType + Default>(
         &self,
         e: &Engine<L>,
         message: &[u8],
+        noise: Option<&[u8]>,
         out: &mut [u8],
     ) -> Result<(), Error> {
         let width = e.curve.width();
@@ -1602,6 +1605,7 @@ impl<const L: usize> Secret<L> {
         let mut nonce = Nonce::<H>::try_new(
             &d_bytes.as_flattened()[..width],
             &z_bytes.as_flattened()[..width],
+            noise,
         )?;
         d_bytes.zeroize();
 
@@ -1730,19 +1734,45 @@ impl<const L: usize> Public<L> {
     }
 }
 
+/// Feeds `n` zero bytes to `mac`, whatever the hash's block size.
+fn zero_pad<H: Hash + Clone + BlockType + Default>(
+    mac: &mut Hmac<H>,
+    mut n: usize,
+) {
+    let zeros = [0u8; 64];
+    while n > 0 {
+        let take = n.min(zeros.len());
+        mac.update(&zeros[..take]);
+        n -= take;
+    }
+}
+
 /// The nonce generator of RFC 6979 section 3.2: HMAC-DRBG over the
 /// signature's hash, seeded with the private key and the message's
 /// digest, so the same key and message always give the same nonce
 /// and nothing else can.
+///
+/// Hedged, random bytes `Z` go in as well, laid out as
+/// draft-irtf-cfrg-det-sigs-with-noise-05 section 4 lays them out:
+/// `V || tag || Z`, then the private key from the start of a fresh
+/// hash block, then the digest from the start of another. A fault
+/// that would make two deterministic signatures share a nonce
+/// computation no longer can, since `Z` differs between them; and if
+/// the random source is weak, the nonce is still at least as good as
+/// RFC 6979's, because the key and the digest are still in it.
 struct Nonce<H: Hash + Clone + BlockType + Default> {
     k: H::Output,
     v: H::Output,
 }
 
 impl<H: Hash + Clone + BlockType + Default> Nonce<H> {
-    /// Steps b through g, given `int2octets(x)` and
-    /// `bits2octets(h1)`.
-    fn try_new(x: &[u8], h: &[u8]) -> Result<Self, Error> {
+    /// Steps b through g, given `int2octets(x)`, `bits2octets(h1)`
+    /// and, hedged, `Z`.
+    fn try_new(
+        x: &[u8],
+        h: &[u8],
+        noise: Option<&[u8]>,
+    ) -> Result<Self, Error> {
         // V starts as 0x01 repeated and K as 0x00 repeated. A digest
         // is the only `H::Output` generic code can make; its value
         // is gone before either is used.
@@ -1751,17 +1781,36 @@ impl<H: Hash + Clone + BlockType + Default> Nonce<H> {
         let mut k = v;
         k.as_mut().fill(0x00);
         let mut nonce = Nonce { k, v };
-        nonce.seed(0x00, x, h)?;
-        nonce.seed(0x01, x, h)?;
+        nonce.seed(0x00, x, h, noise)?;
+        nonce.seed(0x01, x, h, noise)?;
         Ok(nonce)
     }
 
-    /// `K = HMAC_K(V || tag || x || h)`, then `V = HMAC_K(V)`.
-    fn seed(&mut self, tag: u8, x: &[u8], h: &[u8]) -> Result<(), Error> {
+    /// `K = HMAC_K(V || tag || x || h)`, or hedged
+    /// `K = HMAC_K(V || tag || Z || 0... || x || 0... || h)`, then
+    /// `V = HMAC_K(V)`.
+    fn seed(
+        &mut self,
+        tag: u8,
+        x: &[u8],
+        h: &[u8],
+        noise: Option<&[u8]>,
+    ) -> Result<(), Error> {
         let mut mac = Hmac::<H>::new(self.k.as_ref());
         mac.update(self.v.as_ref());
         mac.update(&[tag]);
-        mac.update(x);
+        if let Some(z) = noise {
+            // The zeros fill each part out to the hash's block, so
+            // that the key is hashed in blocks of its own.
+            let block = size_of::<H::Block>();
+            let head = size_of::<H::Output>() + 1 + z.len();
+            mac.update(z);
+            zero_pad(&mut mac, (block - head % block) % block);
+            mac.update(x);
+            zero_pad(&mut mac, (block - x.len() % block) % block);
+        } else {
+            mac.update(x);
+        }
         mac.update(h);
         self.k = mac.finalize();
         self.v = Hmac::<H>::mac(self.k.as_ref(), self.v.as_ref());
@@ -1801,7 +1850,8 @@ impl<H: Hash + Clone + BlockType + Default> Nonce<H> {
     /// `K = HMAC_K(V || 0x00)`, `V = HMAC_K(V)`: what follows every
     /// candidate, taken or not.
     fn seed_again(&mut self) -> Result<(), Error> {
-        self.seed(0x00, &[], &[])
+        // Step h.3 has no provided data, hedged or not.
+        self.seed(0x00, &[], &[], None)
     }
 }
 
@@ -2305,7 +2355,9 @@ pub(crate) use key_types;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hash::sha2::{Sha256, Sha384};
+    use crate::hash::sha2::{Sha256, Sha384, Sha512};
+    use std::vec;
+    use std::vec::Vec;
 
     /// The generator, in the field's domain. Only the tests need
     /// it by itself: every multiplication of it goes through the
@@ -3000,6 +3052,80 @@ mod tests {
         check(&P521);
     }
 
+    /// The hedged seeding, rebuilt by hand from the draft's text
+    /// (draft-irtf-cfrg-det-sigs-with-noise-05 section 4, steps d and
+    /// f) as one padded buffer each, against the generator's state:
+    /// for SHA-256's 64-byte blocks with P-256's 32-byte key, and for
+    /// SHA-512's 128-byte blocks with P-521's 66-byte one. The draft
+    /// has no vectors yet, so this is what pins the layout.
+    #[test]
+    fn hedged_nonce_layout() {
+        fn by_hand<H: Hash + Clone + BlockType + Default>(
+            x: &[u8],
+            h: &[u8],
+            z: &[u8],
+        ) -> (Vec<u8>, Vec<u8>) {
+            let block = size_of::<H::Block>();
+            let out = size_of::<H::Output>();
+            let mut k = vec![0u8; out];
+            let mut v = vec![1u8; out];
+            for tag in [0u8, 1] {
+                let mut data = v.clone();
+                data.push(tag);
+                data.extend_from_slice(z);
+                while !data.len().is_multiple_of(block) {
+                    data.push(0);
+                }
+                let mut key = x.to_vec();
+                while !key.len().is_multiple_of(block) {
+                    key.push(0);
+                }
+                data.extend_from_slice(&key);
+                data.extend_from_slice(h);
+                k = Hmac::<H>::mac(&k, &data).as_ref().to_vec();
+                v = Hmac::<H>::mac(&k, &v).as_ref().to_vec();
+            }
+            (k, v)
+        }
+        let (x, h, z) = ([7u8; 32], [9u8; 32], [3u8; 32]);
+        let nonce = Nonce::<Sha256>::try_new(&x, &h, Some(&z)).unwrap();
+        let (k, v) = by_hand::<Sha256>(&x, &h, &z);
+        assert_eq!((nonce.k.as_ref(), nonce.v.as_ref()), (&k[..], &v[..]));
+        let (x, h, z) = ([7u8; 66], [9u8; 66], [3u8; 66]);
+        let nonce = Nonce::<Sha512>::try_new(&x, &h, Some(&z)).unwrap();
+        let (k, v) = by_hand::<Sha512>(&x, &h, &z);
+        assert_eq!((nonce.k.as_ref(), nonce.v.as_ref()), (&k[..], &v[..]));
+        // Without noise it is RFC 6979's seeding, which differs.
+        let plain = Nonce::<Sha512>::try_new(&x, &h, None).unwrap();
+        assert_ne!(plain.k.as_ref(), &k[..]);
+    }
+
+    /// A hedged signature verifies, and differs from the
+    /// deterministic one and from another hedged with other noise.
+    #[test]
+    fn hedged_signatures_verify() {
+        let mut buf = [0u8; 48];
+        let e = Engine::new(&P256);
+        let d = Secret::try_new(&e, unhex(&"42".repeat(32), &mut buf)).unwrap();
+        let mut plain = [0u8; 64];
+        d.sign::<Sha256>(&e, b"m", None, &mut plain).unwrap();
+        let mut a = [0u8; 64];
+        d.sign::<Sha256>(&e, b"m", Some(&[1; 32]), &mut a).unwrap();
+        let mut b = [0u8; 64];
+        d.sign::<Sha256>(&e, b"m", Some(&[2; 32]), &mut b).unwrap();
+        for sig in [&plain, &a, &b] {
+            d.public(&e).verify::<Sha256>(&e, b"m", sig).unwrap();
+        }
+        assert_ne!(a, plain);
+        assert_ne!(a, b);
+        // The same noise gives the same signature: the randomness is
+        // the only thing that varies.
+        let mut again = [0u8; 64];
+        d.sign::<Sha256>(&e, b"m", Some(&[1; 32]), &mut again)
+            .unwrap();
+        assert_eq!(a, again);
+    }
+
     /// RFC 6979 appendix A.2.5 and A.2.6: deterministic signatures
     /// over "sample" and "test" with the private key given there.
     #[test]
@@ -3016,7 +3142,7 @@ mod tests {
         )
         .unwrap();
         let mut sig = [0u8; 64];
-        d.sign::<Sha256>(&e, b"sample", &mut sig).unwrap();
+        d.sign::<Sha256>(&e, b"sample", None, &mut sig).unwrap();
         let mut expected = [0u8; 64];
         unhex(
             "efd48b2aacb6a8fd1140dd9cd45e81d69d2c877b56aaf991c34d0ea84eaf3716\
@@ -3025,7 +3151,7 @@ mod tests {
         );
         assert_eq!(sig, expected);
         d.public(&e).verify::<Sha256>(&e, b"sample", &sig).unwrap();
-        d.sign::<Sha256>(&e, b"test", &mut sig).unwrap();
+        d.sign::<Sha256>(&e, b"test", None, &mut sig).unwrap();
         unhex(
             "f1abb023518351cd71d881567b1ea663ed3efcf6c5132b354f28d3b0b7d38367\
              019f4113742a2b14bd25926b49c649155f267e60d3814b4c0cc84250e46f0083",
@@ -3045,7 +3171,7 @@ mod tests {
         )
         .unwrap();
         let mut sig = [0u8; 96];
-        d.sign::<Sha384>(&e, b"sample", &mut sig).unwrap();
+        d.sign::<Sha384>(&e, b"sample", None, &mut sig).unwrap();
         let mut expected = [0u8; 96];
         unhex(
             "94edbb92a5ecb8aad4736e56c691916b3f88140666ce9fa73d64c4ea95ad133c\
@@ -3066,7 +3192,7 @@ mod tests {
         let d = Secret::generate(&e, &mut rng).unwrap();
         let public = d.public(&e);
         let mut sig = [0u8; 64];
-        d.sign::<Sha256>(&e, b"message", &mut sig).unwrap();
+        d.sign::<Sha256>(&e, b"message", None, &mut sig).unwrap();
         public.verify::<Sha256>(&e, b"message", &sig).unwrap();
         let bad = |s: &[u8], m: &[u8]| {
             assert_eq!(

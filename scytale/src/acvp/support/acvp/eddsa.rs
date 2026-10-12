@@ -26,10 +26,11 @@ fn sign(
 ) -> [u8; 64] {
     if prehash {
         let digest = Sha512::digest(message);
-        ed25519::sign_ph(secret, context, &digest).expect("sign_ph")
+        ed25519::sign_ph_deterministic(secret, context, &digest)
+            .expect("sign_ph")
     } else {
         assert!(context.is_empty(), "no Ed25519ctx case is expected");
-        ed25519::sign(secret, message)
+        ed25519::sign_deterministic(secret, message)
     }
 }
 

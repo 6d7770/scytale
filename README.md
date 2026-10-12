@@ -302,8 +302,8 @@ encryption keys are distinct types: a key does one job.
 | ECDH (SP 800-56A) over P-256, P-384, P-521 | `kex` | every public key checked on the curve; compressed points read |
 | HPKE (RFC 9180), base mode | `pke` | DHKEM over X25519, P-256, P-384, P-521; HKDF-SHA256/384/512; AES-GCM, ChaCha20-Poly1305 |
 | RSA-OAEP (RFC 8017) | `pke` | constant-time unpadding; no v1.5 decryption, ever |
-| Ed25519, Ed25519ctx, Ed25519ph (RFC 8032) | `sig` | deterministic; refuses malleable signatures; context strings |
-| ECDSA (FIPS 186-5) over P-256, P-384, P-521 | `sig` | RFC 6979 nonces; r \|\| s and DER signature forms |
+| Ed25519, Ed25519ctx, Ed25519ph (RFC 8032) | `sig` | hedged against faults, or deterministic; refuses malleable signatures; context strings |
+| ECDSA (FIPS 186-5) over P-256, P-384, P-521 | `sig` | RFC 6979 nonces, hedged against faults or deterministic; r \|\| s and DER signature forms |
 | RSA-PSS, RSA PKCS#1 v1.5 (RFC 8017) | `sig` | any width; CRT signing and key generation |
 | ML-DSA (FIPS 204), all three sets | `sig` | post-quantum; hedged or deterministic; context strings |
 | SLH-DSA (FIPS 205), all twelve sets | `sig` | post-quantum, hash-based; hedged or deterministic; context strings |
