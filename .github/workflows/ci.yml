@@ -433,9 +433,19 @@ jobs:
           rustup default stable
 
       - name: Package and build the crates as published
-        # scytale-ring is built against scytale as published, not the
-        # copy beside it, which is what anyone who installs it gets.
-        run: cargo package -p scytale -p scytale-ring
+        # Packaged together, each crate is built against scytale as it
+        # will be published, not the copy beside it, which is what
+        # anyone who installs it gets; a crate that uses library code
+        # the release would not carry fails here, not at publish.
+        #
+        # Without the lock file: the provider and the tool ship one,
+        # and between releases it names a scytale version crates.io
+        # already has, so the check would build against that rather
+        # than the code being packaged. At a release the version is
+        # new and the lock file is harmless.
+        run: |
+          cargo package --exclude-lockfile -p scytale -p scytale-ring \
+              -p rustls-scytale -p scytale-cli
 
       - name: Report crate size
         run: ls -lh target/package/*.crate
