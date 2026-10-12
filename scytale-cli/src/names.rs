@@ -555,10 +555,105 @@ pub static KEM: Family = Family {
 static OAEP: [Entry; 11] =
     over_hashes!("rsa-oaep-", No, any, "an RSA key; --label");
 
+/// Nine HPKE suites over one KEM: each KDF with each AEAD.
+macro_rules! hpke {
+    ($kem:literal, $n:literal) => {
+        [
+            e(
+                concat!("hpke-", $kem, "-sha256-aes-128-gcm"),
+                No,
+                No,
+                No,
+                Any,
+                $n,
+            ),
+            e(
+                concat!("hpke-", $kem, "-sha256-aes-256-gcm"),
+                No,
+                No,
+                No,
+                Any,
+                $n,
+            ),
+            e(
+                concat!("hpke-", $kem, "-sha256-chacha20-poly1305"),
+                No,
+                No,
+                No,
+                Any,
+                $n,
+            ),
+            e(
+                concat!("hpke-", $kem, "-sha384-aes-128-gcm"),
+                No,
+                No,
+                No,
+                Any,
+                $n,
+            ),
+            e(
+                concat!("hpke-", $kem, "-sha384-aes-256-gcm"),
+                No,
+                No,
+                No,
+                Any,
+                $n,
+            ),
+            e(
+                concat!("hpke-", $kem, "-sha384-chacha20-poly1305"),
+                No,
+                No,
+                No,
+                Any,
+                $n,
+            ),
+            e(
+                concat!("hpke-", $kem, "-sha512-aes-128-gcm"),
+                No,
+                No,
+                No,
+                Any,
+                $n,
+            ),
+            e(
+                concat!("hpke-", $kem, "-sha512-aes-256-gcm"),
+                No,
+                No,
+                No,
+                Any,
+                $n,
+            ),
+            e(
+                concat!("hpke-", $kem, "-sha512-chacha20-poly1305"),
+                No,
+                No,
+                No,
+                Any,
+                $n,
+            ),
+        ]
+    };
+}
+
+static HPKE_X25519: [Entry; 9] =
+    hpke!("x25519", "an x25519 key; 32-byte enc first; --info, --aad");
+static HPKE_P256: [Entry; 9] = hpke!(
+    "ecdh-p256",
+    "an ecdh-p256 key; 65-byte enc first; --info, --aad"
+);
+static HPKE_P384: [Entry; 9] = hpke!(
+    "ecdh-p384",
+    "an ecdh-p384 key; 97-byte enc first; --info, --aad"
+);
+static HPKE_P521: [Entry; 9] = hpke!(
+    "ecdh-p521",
+    "an ecdh-p521 key; 133-byte enc first; --info, --aad"
+);
+
 pub static PKE: Family = Family {
     name: "pke",
     what: "encryption scheme",
-    entries: &[&OAEP],
+    entries: &[&OAEP, &HPKE_X25519, &HPKE_P256, &HPKE_P384, &HPKE_P521],
 };
 
 /// Every family, in the order `list` prints them.
