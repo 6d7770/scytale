@@ -389,7 +389,7 @@ mod tests {
     fn ecdsa_round_trip_and_compressed_keys() {
         let mut rng = CtrDrbg::from_system().unwrap();
         let key = ecdsa::p384::PrivateKey::generate(&mut rng).unwrap();
-        let sig = key.sign::<Sha384>(b"message").unwrap();
+        let sig = key.sign::<Sha384, _>(&mut rng, b"message").unwrap();
         let mut der = [0u8; 120];
         let n = ecdsa::p384::signature_der(&sig, &mut der).unwrap();
         let public = key.public_key().sec1_bytes();

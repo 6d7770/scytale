@@ -6,9 +6,18 @@
 //! the secret scalar to a hash of `R`, the public key and the
 //! message. Verification checks the one equation `sB = R + kA`.
 //!
-//! Signing is deterministic: the same key and message always give
-//! the same signature, and no randomness is consumed, so a weak
-//! generator cannot leak the key the way it can with ECDSA.
+//! RFC 8032 makes signing deterministic: the nonce is a hash of a
+//! secret prefix and the message, so a weak generator cannot leak
+//! the key the way it can with ECDSA. But two signatures of one
+//! message are then the same computation, and a fault injected into
+//! one, or a power trace of the hashing, can recover the key.
+//! [`sign`] and its kin hedge the nonce against that, as
+//! draft-irtf-cfrg-det-sigs-with-noise-05 section 3 says: 32 random
+//! bytes are hashed into the prefix first, so no two signatures
+//! share the computation, and a weak random source leaves the nonce
+//! as good as RFC 8032's. Verifiers cannot tell the difference.
+//! [`sign_deterministic`] and its kin are RFC 8032 exactly, for test
+//! vectors and the protocols that need the same signature twice.
 //!
 //! All three variants of RFC 8032 section 5.1 are here. Plain
 //! Ed25519, [`sign`] and [`verify`], is the one to reach for.
@@ -27,11 +36,13 @@
 //!
 //! ```
 //! use scytale::Key;
+//! use scytale::random::CtrDrbg;
 //! use scytale::sig::ed25519::PrivateKey;
 //!
 //! # fn main() -> Result<(), scytale::Error> {
+//! let mut rng = CtrDrbg::from_system()?;
 //! let key = PrivateKey::new(&Key::from([0x42u8; 32]));
-//! let signature = key.sign(b"the message");
+//! let signature = key.sign(&mut rng, b"the message")?;
 //! key.public_key().verify(b"the message", &signature)?;
 //! assert!(key.public_key().verify(b"another", &signature).is_err());
 //! # Ok(())
@@ -91,9 +102,35 @@ pub fn public_key(secret: &[u8; KEY_SIZE]) -> [u8; PUBLIC_KEY_SIZE] {
     public
 }
 
-/// Signs `message` with `secret`.
-pub fn sign(secret: &[u8; KEY_SIZE], message: &[u8]) -> [u8; SIGNATURE_SIZE] {
-    sign_with(secret, &public_key(secret), &[], message)
+/// The 32 random bytes that hedge one signature's nonce.
+fn noise<R: Random>(rng: &mut R) -> Result<[u8; 32], Error> {
+    let mut z = [0u8; 32];
+    rng.fill(&mut z)?;
+    Ok(z)
+}
+
+/// Signs `message` with `secret`, the nonce hedged by 32 bytes from
+/// `rng`: see the module's notes.
+pub fn sign<R: Random>(
+    secret: &[u8; KEY_SIZE],
+    rng: &mut R,
+    message: &[u8],
+) -> Result<[u8; SIGNATURE_SIZE], Error> {
+    let mut z = noise(rng)?;
+    let signature =
+        sign_with(secret, &public_key(secret), &[], message, Some(&z));
+    z.zeroize();
+    Ok(signature)
+}
+
+/// Signs `message` with `secret` as RFC 8032 does, the same key and
+/// message always giving the same signature. For test vectors and
+/// repeatable output; [`sign`] otherwise.
+pub fn sign_deterministic(
+    secret: &[u8; KEY_SIZE],
+    message: &[u8],
+) -> [u8; SIGNATURE_SIZE] {
+    sign_with(secret, &public_key(secret), &[], message, None)
 }
 
 /// Checks that `signature` signs `message` under `public`.
@@ -115,12 +152,34 @@ pub const CONTEXT_MAX: usize = 255;
 /// The length of the SHA-512 digest Ed25519ph signs.
 pub const PREHASH_SIZE: usize = 64;
 
-/// Signs `message` under `context` with `secret`, by Ed25519ctx.
+/// Signs `message` under `context` with `secret`, by Ed25519ctx, the
+/// nonce hedged by 32 bytes from `rng`.
 ///
 /// The context is 1 to [`CONTEXT_MAX`] bytes; anything else is
 /// [`Error::InvalidLength`]. RFC 8032 says it should not be empty,
 /// and a use with no context to give is plain [`sign`]'s.
-pub fn sign_ctx(
+pub fn sign_ctx<R: Random>(
+    secret: &[u8; KEY_SIZE],
+    rng: &mut R,
+    context: &[u8],
+    message: &[u8],
+) -> Result<[u8; SIGNATURE_SIZE], Error> {
+    let head = dom2(CTX, context)?;
+    let mut z = noise(rng)?;
+    let signature = sign_with(
+        secret,
+        &public_key(secret),
+        &[&head, context],
+        message,
+        Some(&z),
+    );
+    z.zeroize();
+    Ok(signature)
+}
+
+/// Ed25519ctx as RFC 8032 does it, deterministically; the context
+/// is refused as [`sign_ctx`] refuses it.
+pub fn sign_ctx_deterministic(
     secret: &[u8; KEY_SIZE],
     context: &[u8],
     message: &[u8],
@@ -131,6 +190,7 @@ pub fn sign_ctx(
         &public_key(secret),
         &[&head, context],
         message,
+        None,
     ))
 }
 
@@ -148,7 +208,7 @@ pub fn verify_ctx(
 }
 
 /// Signs the SHA-512 digest `prehash` under `context` with `secret`,
-/// by Ed25519ph.
+/// by Ed25519ph, the nonce hedged by 32 bytes from `rng`.
 ///
 /// The digest is what the caller has hashed the message to, in as
 /// many pieces as it arrived in, which is the reason to choose this
@@ -158,21 +218,44 @@ pub fn verify_ctx(
 /// ```
 /// use scytale::hash::Hash;
 /// use scytale::hash::sha2::Sha512;
+/// use scytale::random::CtrDrbg;
 /// use scytale::sig::ed25519;
 ///
 /// # fn main() -> Result<(), scytale::Error> {
+/// let mut rng = CtrDrbg::from_system()?;
 /// let secret = [0x42u8; 32];
 /// let mut hasher = Sha512::new();
 /// hasher.update(b"a message that ");
 /// hasher.update(b"arrives in parts");
 /// let prehash = hasher.finalize();
-/// let signature = ed25519::sign_ph(&secret, b"", &prehash)?;
+/// let signature = ed25519::sign_ph(&secret, &mut rng, b"", &prehash)?;
 /// let public = ed25519::public_key(&secret);
 /// ed25519::verify_ph(&public, b"", &prehash, &signature)?;
 /// # Ok(())
 /// # }
 /// ```
-pub fn sign_ph(
+pub fn sign_ph<R: Random>(
+    secret: &[u8; KEY_SIZE],
+    rng: &mut R,
+    context: &[u8],
+    prehash: &[u8; PREHASH_SIZE],
+) -> Result<[u8; SIGNATURE_SIZE], Error> {
+    let head = dom2(PH, context)?;
+    let mut z = noise(rng)?;
+    let signature = sign_with(
+        secret,
+        &public_key(secret),
+        &[&head, context],
+        prehash,
+        Some(&z),
+    );
+    z.zeroize();
+    Ok(signature)
+}
+
+/// Ed25519ph as RFC 8032 does it, deterministically; the context is
+/// refused as [`sign_ph`] refuses it.
+pub fn sign_ph_deterministic(
     secret: &[u8; KEY_SIZE],
     context: &[u8],
     prehash: &[u8; PREHASH_SIZE],
@@ -183,6 +266,7 @@ pub fn sign_ph(
         &public_key(secret),
         &[&head, context],
         prehash,
+        None,
     ))
 }
 
@@ -226,23 +310,41 @@ fn dom2(flag: u8, context: &[u8]) -> Result<[u8; 34], Error> {
 /// with `dom` hashed ahead of both hashes: nothing for Ed25519, and
 /// `dom2` and the context for the other two. A [`PrivateKey`] has
 /// derived the public key already, and deriving it again would cost
-/// as much as the signature's own multiplication.
+/// as much as the signature's own multiplication. With `noise`, the
+/// nonce is hedged as the module's notes say.
 fn sign_with(
     secret: &[u8; KEY_SIZE],
     public: &[u8; PUBLIC_KEY_SIZE],
     dom: &[&[u8]],
     message: &[u8],
+    noise: Option<&[u8; 32]>,
 ) -> [u8; SIGNATURE_SIZE] {
     let mut h = Sha512::digest(secret);
     let mut a = secret_scalar(&h);
 
-    // The nonce: a hash of the secret prefix and the message, so it
-    // is unique per message without consuming randomness.
+    // The prefix, or hedged, the first half of SHA-512(prefix || Z):
+    // the secret meets the random bytes before anything public.
+    let mut prefix = [0u8; 32];
+    match noise {
+        Some(z) => {
+            let mut hasher = Sha512::new();
+            hasher.update(&h[32..]);
+            hasher.update(z);
+            let mut mixed = hasher.finalize();
+            prefix.copy_from_slice(&mixed[..32]);
+            mixed.zeroize();
+        }
+        None => prefix.copy_from_slice(&h[32..]),
+    }
+
+    // The nonce: a hash of the prefix and the message, so it is
+    // unique per message whatever the random source does.
     let mut hasher = Sha512::new();
     for part in dom {
         hasher.update(part);
     }
-    hasher.update(&h[32..]);
+    hasher.update(&prefix);
+    prefix.zeroize();
     hasher.update(message);
     let mut wide = hasher.finalize();
     let mut r = Scalar::from_bytes_wide(&wide);
@@ -493,43 +595,89 @@ impl PrivateKey {
         &self.public
     }
 
-    /// Signs `message`.
-    pub fn sign(&self, message: &[u8]) -> [u8; SIGNATURE_SIZE] {
-        sign_with(self.secret.array(), &self.public.bytes, &[], message)
+    /// Signs `message`, the nonce hedged by 32 bytes from `rng`, as
+    /// [`sign`] does.
+    pub fn sign<R: Random>(
+        &self,
+        rng: &mut R,
+        message: &[u8],
+    ) -> Result<[u8; SIGNATURE_SIZE], Error> {
+        self.hedged(rng, &[], message)
     }
 
-    /// Signs `message` under `context`, by Ed25519ctx, as
+    /// Signs `message` as RFC 8032 does, as [`sign_deterministic`]
+    /// does.
+    pub fn sign_deterministic(&self, message: &[u8]) -> [u8; SIGNATURE_SIZE] {
+        sign_with(self.secret.array(), &self.public.bytes, &[], message, None)
+    }
+
+    /// Signs `message` under `context`, by Ed25519ctx, hedged, as
     /// [`sign_ctx`] does.
-    pub fn sign_ctx(
+    pub fn sign_ctx<R: Random>(
+        &self,
+        rng: &mut R,
+        context: &[u8],
+        message: &[u8],
+    ) -> Result<[u8; SIGNATURE_SIZE], Error> {
+        let head = dom2(CTX, context)?;
+        self.hedged(rng, &[&head, context], message)
+    }
+
+    /// Ed25519ctx deterministically, as [`sign_ctx_deterministic`]
+    /// does.
+    pub fn sign_ctx_deterministic(
         &self,
         context: &[u8],
         message: &[u8],
     ) -> Result<[u8; SIGNATURE_SIZE], Error> {
         let head = dom2(CTX, context)?;
-        let dom: [&[u8]; 2] = [&head, context];
-        Ok(sign_with(
-            self.secret.array(),
-            &self.public.bytes,
-            &dom,
-            message,
-        ))
+        Ok(self.sign_dom(&[&head, context], message, None))
     }
 
     /// Signs the SHA-512 digest `prehash` under `context`, by
-    /// Ed25519ph, as [`sign_ph`] does.
-    pub fn sign_ph(
+    /// Ed25519ph, hedged, as [`sign_ph`] does.
+    pub fn sign_ph<R: Random>(
+        &self,
+        rng: &mut R,
+        context: &[u8],
+        prehash: &[u8; PREHASH_SIZE],
+    ) -> Result<[u8; SIGNATURE_SIZE], Error> {
+        let head = dom2(PH, context)?;
+        self.hedged(rng, &[&head, context], prehash)
+    }
+
+    /// Ed25519ph deterministically, as [`sign_ph_deterministic`]
+    /// does.
+    pub fn sign_ph_deterministic(
         &self,
         context: &[u8],
         prehash: &[u8; PREHASH_SIZE],
     ) -> Result<[u8; SIGNATURE_SIZE], Error> {
         let head = dom2(PH, context)?;
-        let dom: [&[u8]; 2] = [&head, context];
-        Ok(sign_with(
-            self.secret.array(),
-            &self.public.bytes,
-            &dom,
-            prehash,
-        ))
+        Ok(self.sign_dom(&[&head, context], prehash, None))
+    }
+
+    /// One signature under `dom`, hedged by bytes from `rng`.
+    fn hedged<R: Random>(
+        &self,
+        rng: &mut R,
+        dom: &[&[u8]],
+        message: &[u8],
+    ) -> Result<[u8; SIGNATURE_SIZE], Error> {
+        let mut z = noise(rng)?;
+        let signature = self.sign_dom(dom, message, Some(&z));
+        z.zeroize();
+        Ok(signature)
+    }
+
+    /// One signature under `dom`, hedged by `noise` if there is any.
+    fn sign_dom(
+        &self,
+        dom: &[&[u8]],
+        message: &[u8],
+        noise: Option<&[u8; 32]>,
+    ) -> [u8; SIGNATURE_SIZE] {
+        sign_with(self.secret.array(), &self.public.bytes, dom, message, noise)
     }
 
     /// A key from its DER `PrivateKeyInfo`, of either version; a
@@ -1410,6 +1558,63 @@ mod tests {
         ),
     ];
 
+    /// The hedged nonce, rebuilt by hand from the draft's text
+    /// (draft-irtf-cfrg-det-sigs-with-noise-05 section 3): the prefix
+    /// becomes the first half of SHA-512(prefix || Z), and the
+    /// signature's R is the base point times the nonce made from it.
+    /// The draft has no vectors yet, so this pins the construction.
+    #[test]
+    fn hedged_nonce_by_hand() {
+        let secret = [0x5au8; KEY_SIZE];
+        let z = [0xc3u8; 32];
+        let head = dom2(CTX, b"use").unwrap();
+        for dom in [&[][..], &[&head[..], b"use"][..]] {
+            let signature =
+                sign_with(&secret, &public_key(&secret), dom, b"m", Some(&z));
+            let h = Sha512::digest(&secret);
+            let mut mixed = Sha512::new();
+            mixed.update(&h[32..]);
+            mixed.update(&z);
+            let mixed = mixed.finalize();
+            let mut nonce = Sha512::new();
+            for part in dom {
+                nonce.update(part);
+            }
+            nonce.update(&mixed[..32]);
+            nonce.update(b"m");
+            let r = Scalar::from_bytes_wide(&nonce.finalize());
+            assert_eq!(signature[..32], Point::mul_base(&r).compress());
+        }
+    }
+
+    /// Hedged signatures verify under every variant, differ from the
+    /// deterministic ones and from each other, and the deterministic
+    /// forms still repeat.
+    #[test]
+    fn hedged_signatures_verify() {
+        let mut rng = CtrDrbg::from_system().unwrap();
+        let key = PrivateKey::new(&Key::from([0x77u8; KEY_SIZE]));
+        let public = key.public_key();
+        let a = key.sign(&mut rng, b"m").unwrap();
+        let b = key.sign(&mut rng, b"m").unwrap();
+        public.verify(b"m", &a).unwrap();
+        public.verify(b"m", &b).unwrap();
+        assert_ne!(a, b);
+        assert_ne!(a, key.sign_deterministic(b"m"));
+        assert_eq!(key.sign_deterministic(b"m"), key.sign_deterministic(b"m"));
+        let ctx = key.sign_ctx(&mut rng, b"use", b"m").unwrap();
+        public.verify_ctx(b"use", b"m", &ctx).unwrap();
+        assert_ne!(ctx, key.sign_ctx_deterministic(b"use", b"m").unwrap());
+        let prehash = Sha512::digest(b"m");
+        let ph = key.sign_ph(&mut rng, b"", &prehash).unwrap();
+        public.verify_ph(b"", &prehash, &ph).unwrap();
+        // The free functions hedge the same way.
+        let seed = [0x77u8; KEY_SIZE];
+        let free = sign(&seed, &mut rng, b"m").unwrap();
+        verify(&public.bytes(), b"m", &free).unwrap();
+        assert_ne!(free, a);
+    }
+
     /// The key types are the free functions with the secret held in
     /// something that wipes itself, so they must agree at every step,
     /// and the pair encoding must read back as what it wrote.
@@ -1421,8 +1626,8 @@ mod tests {
         assert_eq!(key.public_key().bytes(), public_key(&seed));
 
         let message = b"the message";
-        let signature = key.sign(message);
-        assert_eq!(signature, sign(&seed, message));
+        let signature = key.sign_deterministic(message);
+        assert_eq!(signature, sign_deterministic(&seed, message));
         key.public_key()
             .verify(message, &signature)
             .expect("verify");
@@ -1481,7 +1686,7 @@ mod tests {
             let expected_sig = unhex64(sig);
 
             assert_eq!(public_key(&secret), expected_public);
-            let signature = sign(&secret, message);
+            let signature = sign_deterministic(&secret, message);
             assert_eq!(signature, expected_sig);
             assert_eq!(verify(&expected_public, message, &signature), Ok(()),);
         }
@@ -1551,7 +1756,10 @@ mod tests {
             let context = unhex(ctx, &mut context_buf);
             let expected = unhex64(sig);
             assert_eq!(public_key(&secret), public);
-            assert_eq!(sign_ctx(&secret, context, message), Ok(expected));
+            assert_eq!(
+                sign_ctx_deterministic(&secret, context, message),
+                Ok(expected)
+            );
             assert_eq!(
                 verify_ctx(&public, context, message, &expected),
                 Ok(())
@@ -1579,7 +1787,7 @@ mod tests {
         );
         let prehash = Sha512::digest(b"abc");
         assert_eq!(public_key(&secret), public);
-        assert_eq!(sign_ph(&secret, b"", &prehash), Ok(expected));
+        assert_eq!(sign_ph_deterministic(&secret, b"", &prehash), Ok(expected));
         assert_eq!(verify_ph(&public, b"", &prehash, &expected), Ok(()));
     }
 
@@ -1593,17 +1801,20 @@ mod tests {
         let long = [0x33u8; CONTEXT_MAX + 1];
         let signature = [0u8; SIGNATURE_SIZE];
 
-        assert_eq!(sign_ctx(&secret, b"", b"m"), Err(Error::InvalidLength(0)));
+        assert_eq!(
+            sign_ctx_deterministic(&secret, b"", b"m"),
+            Err(Error::InvalidLength(0))
+        );
         assert_eq!(
             verify_ctx(&public, b"", b"m", &signature),
             Err(Error::InvalidLength(0))
         );
         assert_eq!(
-            sign_ctx(&secret, &long, b"m"),
+            sign_ctx_deterministic(&secret, &long, b"m"),
             Err(Error::InvalidLength(256))
         );
         assert_eq!(
-            sign_ph(&secret, &long, &prehash),
+            sign_ph_deterministic(&secret, &long, &prehash),
             Err(Error::InvalidLength(256))
         );
         assert_eq!(
@@ -1612,11 +1823,13 @@ mod tests {
         );
 
         for context in [&long[..1], &long[..CONTEXT_MAX]] {
-            let signature = sign_ctx(&secret, context, b"m").unwrap();
+            let signature =
+                sign_ctx_deterministic(&secret, context, b"m").unwrap();
             assert_eq!(verify_ctx(&public, context, b"m", &signature), Ok(()));
         }
         for context in [&long[..0], &long[..CONTEXT_MAX]] {
-            let signature = sign_ph(&secret, context, &prehash).unwrap();
+            let signature =
+                sign_ph_deterministic(&secret, context, &prehash).unwrap();
             assert_eq!(
                 verify_ph(&public, context, &prehash, &signature),
                 Ok(())
@@ -1633,10 +1846,10 @@ mod tests {
         let public = public_key(&secret);
         let bytes = [0x2cu8; PREHASH_SIZE];
 
-        let plain = sign(&secret, &bytes);
-        let ctx = sign_ctx(&secret, b"foo", &bytes).unwrap();
-        let ph_empty = sign_ph(&secret, b"", &bytes).unwrap();
-        let ph_foo = sign_ph(&secret, b"foo", &bytes).unwrap();
+        let plain = sign_deterministic(&secret, &bytes);
+        let ctx = sign_ctx_deterministic(&secret, b"foo", &bytes).unwrap();
+        let ph_empty = sign_ph_deterministic(&secret, b"", &bytes).unwrap();
+        let ph_foo = sign_ph_deterministic(&secret, b"foo", &bytes).unwrap();
 
         let bad = Err(Error::InvalidSignature);
         assert_eq!(verify_ctx(&public, b"foo", &bytes, &plain), bad);
@@ -1661,16 +1874,19 @@ mod tests {
         let key = PrivateKey::new(&Key::from(seed));
         let prehash = [0x09u8; PREHASH_SIZE];
 
-        let ctx = key.sign_ctx(b"use", b"message").unwrap();
-        assert_eq!(sign_ctx(&seed, b"use", b"message"), Ok(ctx));
+        let ctx = key.sign_ctx_deterministic(b"use", b"message").unwrap();
+        assert_eq!(sign_ctx_deterministic(&seed, b"use", b"message"), Ok(ctx));
         assert_eq!(
             key.public_key().verify_ctx(b"use", b"message", &ctx),
             Ok(())
         );
-        assert_eq!(key.sign_ctx(b"", b"message"), Err(Error::InvalidLength(0)));
+        assert_eq!(
+            key.sign_ctx_deterministic(b"", b"message"),
+            Err(Error::InvalidLength(0))
+        );
 
-        let ph = key.sign_ph(b"use", &prehash).unwrap();
-        assert_eq!(sign_ph(&seed, b"use", &prehash), Ok(ph));
+        let ph = key.sign_ph_deterministic(b"use", &prehash).unwrap();
+        assert_eq!(sign_ph_deterministic(&seed, b"use", &prehash), Ok(ph));
         assert_eq!(key.public_key().verify_ph(b"use", &prehash, &ph), Ok(()));
         assert_eq!(
             key.public_key().verify_ph(b"other", &prehash, &ph),
@@ -1684,7 +1900,7 @@ mod tests {
         let secret = unhex32(sk);
         let public = unhex32(pk);
         let message = *b"af82 is not this message";
-        let signature = sign(&secret, &message);
+        let signature = sign_deterministic(&secret, &message);
         assert_eq!(verify(&public, &message, &signature), Ok(()));
 
         let mut wrong = message;
@@ -1713,7 +1929,7 @@ mod tests {
         let public = unhex32(pk);
         let mut msg_buf = [0u8; 4];
         let message = unhex(msg, &mut msg_buf);
-        let mut signature = sign(&secret, message);
+        let mut signature = sign_deterministic(&secret, message);
         let l_bytes = {
             let mut out = [0u8; 32];
             for (chunk, word) in out.chunks_exact_mut(8).zip(L) {

@@ -67,7 +67,7 @@ macro_rules! curve {
                 key: &Self::Private,
                 message: &[u8],
             ) -> Vec<u8> {
-                key.sign::<H>(message).expect("sign").to_vec()
+                key.sign_deterministic::<H>(message).expect("sign").to_vec()
             }
             fn verify<H: Hash + Clone + BlockType + Default>(
                 key: &Self::Public,

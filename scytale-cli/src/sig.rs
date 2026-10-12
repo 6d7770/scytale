@@ -165,18 +165,25 @@ fn sign(args: SignArgs) -> Result<()> {
     let info = scytale::KeyInfo::try_from_pem(&pem)?;
     let message = io::read_all(args.file.as_deref())?;
     let context = value::text(args.context.as_deref(), "--context")?;
+    // One generator for every scheme that draws: RSA-PSS's salt, and
+    // the hedging of Ed25519, ECDSA, ML-DSA and SLH-DSA, each the
+    // deterministic nonce with fresh randomness mixed in. RSA PKCS#1
+    // v1.5 draws nothing.
+    let mut rng = CtrDrbg::from_system()?;
     let signature: Vec<u8> = match scheme {
         Scheme::Ed25519 => {
             let key = ed25519::PrivateKey::try_from_pem(&pem)?;
             match &args.context {
-                Some(_) => key.sign_ctx(&context, &message)?.to_vec(),
-                None => key.sign(&message).to_vec(),
+                Some(_) => key.sign_ctx(&mut rng, &context, &message)?.to_vec(),
+                None => key.sign(&mut rng, &message)?.to_vec(),
             }
         }
         Scheme::Ecdsa(hash) => match info.algorithm {
             Algorithm::P256 => {
                 let key = ecdsa::p256::PrivateKey::try_from_pem(&pem)?;
-                let sig = with_hash!(hash, H => Ok(key.sign::<H>(&message)?))?;
+                let sig = with_hash!(hash, H => {
+                    Ok(key.sign::<H, _>(&mut rng, &message)?)
+                })?;
                 if args.raw_ecdsa {
                     sig.to_vec()
                 } else {
@@ -187,7 +194,9 @@ fn sign(args: SignArgs) -> Result<()> {
             }
             Algorithm::P384 => {
                 let key = ecdsa::p384::PrivateKey::try_from_pem(&pem)?;
-                let sig = with_hash!(hash, H => Ok(key.sign::<H>(&message)?))?;
+                let sig = with_hash!(hash, H => {
+                    Ok(key.sign::<H, _>(&mut rng, &message)?)
+                })?;
                 if args.raw_ecdsa {
                     sig.to_vec()
                 } else {
@@ -198,7 +207,9 @@ fn sign(args: SignArgs) -> Result<()> {
             }
             _ => {
                 let key = ecdsa::p521::PrivateKey::try_from_pem(&pem)?;
-                let sig = with_hash!(hash, H => Ok(key.sign::<H>(&message)?))?;
+                let sig = with_hash!(hash, H => {
+                    Ok(key.sign::<H, _>(&mut rng, &message)?)
+                })?;
                 if args.raw_ecdsa {
                     sig.to_vec()
                 } else {
@@ -210,7 +221,6 @@ fn sign(args: SignArgs) -> Result<()> {
         },
         Scheme::RsaPss(hash) => {
             let key = rsa::PrivateKey::try_from_pem(&pem)?;
-            let mut rng = CtrDrbg::from_system()?;
             let sig = with_hash!(hash, H => {
                 Ok(key.sign_pss::<H, _>(&mut rng, &message)?)
             })?;
@@ -224,7 +234,6 @@ fn sign(args: SignArgs) -> Result<()> {
         }
         Scheme::PostQuantum(a) => with_pq_sig!(a, m => {
             let key = m::PrivateKey::try_from_pem(&pem)?;
-            let mut rng = CtrDrbg::from_system()?;
             key.sign(&mut rng, &context, &message)
                 .map_err(|_| usage!(
                     "--context is {} bytes; at most 255",

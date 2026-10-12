@@ -351,22 +351,32 @@ impl Signer for Signing {
                 let mut rng = generator().map_err(failed)?;
                 rsa_bytes(key.sign_pss::<Sha512, _>(&mut rng, message))
             }
-            // The nonce is RFC 6979's, derived from the key and the
-            // digest: no randomness to fail or to leak.
+            // Hedged: RFC 6979's nonce, from the key and the digest,
+            // with fresh randomness mixed in, so a fault in one
+            // signature cannot be compared with another of the same
+            // message; a failed source leaves RFC 6979's nonce.
             (Secret::P256(key), S::ECDSA_NISTP256_SHA256) => {
-                let sig = key.sign::<Sha256>(message).map_err(failed)?;
+                let mut rng = generator().map_err(failed)?;
+                let sig =
+                    key.sign::<Sha256, _>(&mut rng, message).map_err(failed)?;
                 ecdsa_der(&sig, |o| ecdsa::p256::signature_der(&sig, o))
             }
             (Secret::P384(key), S::ECDSA_NISTP384_SHA384) => {
-                let sig = key.sign::<Sha384>(message).map_err(failed)?;
+                let mut rng = generator().map_err(failed)?;
+                let sig =
+                    key.sign::<Sha384, _>(&mut rng, message).map_err(failed)?;
                 ecdsa_der(&sig, |o| ecdsa::p384::signature_der(&sig, o))
             }
             (Secret::P521(key), S::ECDSA_NISTP521_SHA512) => {
-                let sig = key.sign::<Sha512>(message).map_err(failed)?;
+                let mut rng = generator().map_err(failed)?;
+                let sig =
+                    key.sign::<Sha512, _>(&mut rng, message).map_err(failed)?;
                 ecdsa_der(&sig, |o| ecdsa::p521::signature_der(&sig, o))
             }
+            // Hedged the same way.
             (Secret::Ed25519(key), S::ED25519) => {
-                Ok(key.sign(message).to_vec())
+                let mut rng = generator().map_err(failed)?;
+                Ok(key.sign(&mut rng, message).map_err(failed)?.to_vec())
             }
             // Hedged: fresh randomness mixed into the derivation
             // (FIPS 204 section 3.4), and the empty context TLS uses.

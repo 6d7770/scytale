@@ -299,7 +299,9 @@ impl Ed25519KeyPair {
 
     /// Signs `msg`.
     pub fn sign(&self, msg: &[u8]) -> Signature {
-        Signature::new(&self.private.sign(msg))
+        // ring's Ed25519 takes no generator, and ring's own tests check
+        // RFC 8032's exact bytes, so this is the deterministic form.
+        Signature::new(&self.private.sign_deterministic(msg))
     }
 }
 
@@ -746,8 +748,9 @@ impl EcdsaKeyPair {
     ) -> Result<Signature, error::Unspecified> {
         macro_rules! sign {
             ($curve:ident, $key:expr, $hash:ty) => {{
-                let fixed =
-                    $key.sign::<$hash>(message).map_err(error::erase)?;
+                let fixed = $key
+                    .sign_deterministic::<$hash>(message)
+                    .map_err(error::erase)?;
                 if self.alg.asn1 {
                     let mut der = [0u8; MAX_LEN];
                     let len = $curve::signature_der(&fixed, &mut der)
