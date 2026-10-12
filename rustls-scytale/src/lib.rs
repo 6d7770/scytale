@@ -32,10 +32,11 @@
 //! TLS 1.3:
 //!
 //! - Cipher suites: AES-128-GCM-SHA256, AES-256-GCM-SHA384 and
-//!   ChaCha20-Poly1305-SHA256.
-//! - QUIC: all three suites also protect QUIC packets and their
-//!   headers (RFC 9001), so rustls's QUIC support runs on this
-//!   provider.
+//!   ChaCha20-Poly1305-SHA256 by default; AES-128-CCM-SHA256 and
+//!   AES-128-CCM-8-SHA256 on request.
+//! - QUIC: every suite but AES-128-CCM-8 also protects QUIC packets
+//!   and their headers (RFC 9001), so rustls's QUIC support runs on
+//!   this provider. RFC 9001 forbids the 8-byte tag in QUIC.
 //! - Key exchange: X25519MLKEM768 first, then X25519, P-256 and
 //!   P-384. SECP256R1MLKEM768, ML-KEM-768 and ML-KEM-1024 are in
 //!   [`ALL_KX_GROUPS`] for a program that asks for them.
@@ -48,7 +49,9 @@
 //! TLS 1.2:
 //!
 //! - Cipher suites: ECDHE-ECDSA and ECDHE-RSA, each with
-//!   AES-128-GCM, AES-256-GCM and ChaCha20-Poly1305.
+//!   AES-128-GCM, AES-256-GCM and ChaCha20-Poly1305, by default;
+//!   ECDHE-ECDSA with AES-128-CCM, AES-256-CCM, AES-128-CCM-8 and
+//!   AES-256-CCM-8 on request.
 //! - Key exchange: X25519, P-256 and P-384. The post-quantum groups
 //!   are defined for TLS 1.3 only.
 //! - Handshake signatures: ECDSA on P-256, P-384 and P-521, where a
@@ -64,6 +67,17 @@
 //!   PKCS#8; Ed25519 and ML-DSA in PKCS#8.
 //! - Session tickets: sealed with ChaCha20-Poly1305, under a key
 //!   rotated every six hours.
+//!
+//! # AES-CCM
+//!
+//! The CCM suites are for the constrained-device profiles that ask
+//! for them; none is a default. The 16-byte-tag ones are in
+//! [`ALL_TLS13_CIPHER_SUITES`] and [`ALL_TLS12_CIPHER_SUITES`]. The
+//! CCM-8 ones, whose 8-byte tag lets a forgery succeed with
+//! probability 2^-64 a try, are in no list: a program gets one only
+//! by naming it in [`cipher_suite`], never by taking a whole list.
+//! rustls has no form for CCM keys to be handed to kernel TLS in, so
+//! extracting them is refused.
 //!
 //! Everything is a call into scytale; this crate holds only what
 //! rustls asks of a provider: the record layouts, the lists, and the
@@ -113,8 +127,8 @@ pub use verify::{
     RSA_PSS_2048_8192_SHA512_LEGACY_KEY, SUPPORTED_SIG_ALGS,
 };
 
-/// The provider, with every TLS 1.3 and TLS 1.2 suite and the
-/// default key exchange groups.
+/// The provider, with the default TLS 1.3 and TLS 1.2 suites and key
+/// exchange groups.
 pub const DEFAULT_PROVIDER: CryptoProvider = CryptoProvider {
     tls12_cipher_suites: Cow::Borrowed(DEFAULT_TLS12_CIPHER_SUITES),
     tls13_cipher_suites: Cow::Borrowed(DEFAULT_TLS13_CIPHER_SUITES),
@@ -145,24 +159,29 @@ pub static DEFAULT_SECURE_RANDOM: &dyn SecureRandom = &random::Random;
 /// PKCS#8, Ed25519 and ML-DSA in PKCS#8.
 pub static DEFAULT_KEY_PROVIDER: &dyn KeyProvider = &sign::Keys;
 
-/// The TLS 1.3 suites, in preference order.
-pub static DEFAULT_TLS13_CIPHER_SUITES: &[&Tls13CipherSuite] =
-    ALL_TLS13_CIPHER_SUITES;
-
-/// Every TLS 1.3 suite here: AES-128-GCM first, which is fast
-/// wherever AES is in hardware and strong enough everywhere.
-pub static ALL_TLS13_CIPHER_SUITES: &[&Tls13CipherSuite] = &[
+/// The TLS 1.3 suites a provider uses unless told otherwise, in
+/// preference order: AES-128-GCM first, which is fast wherever AES is
+/// in hardware and strong enough everywhere.
+pub static DEFAULT_TLS13_CIPHER_SUITES: &[&Tls13CipherSuite] = &[
     cipher_suite::TLS13_AES_128_GCM_SHA256,
     cipher_suite::TLS13_AES_256_GCM_SHA384,
     cipher_suite::TLS13_CHACHA20_POLY1305_SHA256,
 ];
 
-/// The TLS 1.2 suites, in preference order.
-pub static DEFAULT_TLS12_CIPHER_SUITES: &[&Tls12CipherSuite] =
-    ALL_TLS12_CIPHER_SUITES;
+/// Every TLS 1.3 suite here with a full-length tag: the defaults,
+/// then AES-128-CCM. The CCM_8 suite is left out, so that a program
+/// taking this whole list does not accept an 8-byte tag unawares;
+/// it is in [`cipher_suite`] for a program that names it.
+pub static ALL_TLS13_CIPHER_SUITES: &[&Tls13CipherSuite] = &[
+    cipher_suite::TLS13_AES_128_GCM_SHA256,
+    cipher_suite::TLS13_AES_256_GCM_SHA384,
+    cipher_suite::TLS13_CHACHA20_POLY1305_SHA256,
+    cipher_suite::TLS13_AES_128_CCM_SHA256,
+];
 
-/// Every TLS 1.2 suite here: ECDHE only, AEADs only.
-pub static ALL_TLS12_CIPHER_SUITES: &[&Tls12CipherSuite] = &[
+/// The TLS 1.2 suites a provider uses unless told otherwise, in
+/// preference order: ECDHE only, AEADs only.
+pub static DEFAULT_TLS12_CIPHER_SUITES: &[&Tls12CipherSuite] = &[
     cipher_suite::TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
     cipher_suite::TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
     cipher_suite::TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
@@ -171,10 +190,26 @@ pub static ALL_TLS12_CIPHER_SUITES: &[&Tls12CipherSuite] = &[
     cipher_suite::TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
 ];
 
-/// The cipher suites, one by one.
+/// Every TLS 1.2 suite here with a full-length tag: the defaults,
+/// then ECDHE-ECDSA with AES-128-CCM and AES-256-CCM. The CCM_8
+/// suites are left out, as from [`ALL_TLS13_CIPHER_SUITES`].
+pub static ALL_TLS12_CIPHER_SUITES: &[&Tls12CipherSuite] = &[
+    cipher_suite::TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+    cipher_suite::TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+    cipher_suite::TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
+    cipher_suite::TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+    cipher_suite::TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+    cipher_suite::TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
+    cipher_suite::TLS_ECDHE_ECDSA_WITH_AES_128_CCM,
+    cipher_suite::TLS_ECDHE_ECDSA_WITH_AES_256_CCM,
+];
+
+/// The cipher suites, one by one, the CCM_8 suites included.
 pub mod cipher_suite {
     pub use crate::tls12::{
+        TLS_ECDHE_ECDSA_WITH_AES_128_CCM, TLS_ECDHE_ECDSA_WITH_AES_128_CCM_8,
         TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+        TLS_ECDHE_ECDSA_WITH_AES_256_CCM, TLS_ECDHE_ECDSA_WITH_AES_256_CCM_8,
         TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
         TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
         TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
@@ -182,6 +217,7 @@ pub mod cipher_suite {
         TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
     };
     pub use crate::tls13::{
+        TLS13_AES_128_CCM_8_SHA256, TLS13_AES_128_CCM_SHA256,
         TLS13_AES_128_GCM_SHA256, TLS13_AES_256_GCM_SHA384,
         TLS13_CHACHA20_POLY1305_SHA256,
     };

@@ -89,7 +89,7 @@ impl TicketProducer for Ticketer {
         ticket.extend_from_slice(plain);
         let body = &mut ticket[KEY_NAME_LEN + NONCE_LEN..];
         let tag = self.key.seal(&nonce, &self.key_name, body).ok()?;
-        ticket.extend_from_slice(&tag);
+        ticket.extend_from_slice(tag.as_ref());
         self.longest.fetch_max(ticket.len(), Ordering::SeqCst);
         Some(ticket)
     }

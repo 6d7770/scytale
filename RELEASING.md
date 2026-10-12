@@ -77,6 +77,7 @@ cargo test-extended              # every test, ignored ones included
 scripts/test-all-arches          # the foreign architectures under cross
 scripts/test-ring-downstream     # rustls and webpki on scytale-ring
 scripts/test-rustls-downstream   # rustls's tests and BoGo on the provider
+scripts/test-openssl-interop     # every provider suite against OpenSSL
 ```
 
 The last needs Go, a C compiler and `cpp` for BoGo.

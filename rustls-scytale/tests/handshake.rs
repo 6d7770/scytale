@@ -7,7 +7,7 @@ use std::io::{Read, Write};
 use std::sync::Arc;
 
 use rustls::crypto::kx::SupportedKxGroup;
-use rustls::crypto::{CryptoProvider, Identity};
+use rustls::crypto::{CipherSuite, CryptoProvider, Identity};
 use rustls::enums::ProtocolVersion;
 use rustls::pki_types::{
     CertificateDer, PrivateKeyDer, PrivatePkcs1KeyDer, PrivatePkcs8KeyDer,
@@ -195,6 +195,17 @@ fn with_suite(suite: SupportedCipherSuite) -> Arc<CryptoProvider> {
     })
 }
 
+/// The CCM_8 suites, which no list holds: a program names them.
+fn short_tag_suites() -> [SupportedCipherSuite; 3] {
+    use provider::cipher_suite as cs;
+    [
+        SupportedCipherSuite::Tls13(cs::TLS13_AES_128_CCM_8_SHA256),
+        SupportedCipherSuite::Tls12(cs::TLS_ECDHE_ECDSA_WITH_AES_128_CCM_8),
+        SupportedCipherSuite::Tls12(cs::TLS_ECDHE_ECDSA_WITH_AES_256_CCM_8),
+    ]
+}
+
+/// Every suite the crate has: the `ALL_*` lists and the CCM_8 suites.
 fn all_suites() -> Vec<SupportedCipherSuite> {
     let tls13 = provider::ALL_TLS13_CIPHER_SUITES
         .iter()
@@ -202,7 +213,42 @@ fn all_suites() -> Vec<SupportedCipherSuite> {
     let tls12 = provider::ALL_TLS12_CIPHER_SUITES
         .iter()
         .map(|s| SupportedCipherSuite::Tls12(s));
-    tls13.chain(tls12).collect()
+    tls13.chain(tls12).chain(short_tag_suites()).collect()
+}
+
+/// An 8-byte tag is never in a list a program might take whole, and
+/// no CCM suite is a default: a program gets one only by naming it.
+#[test]
+fn short_tags_only_by_name() {
+    let names = |suites: &mut dyn Iterator<Item = CipherSuite>| {
+        suites.map(|s| format!("{s:?}")).collect::<Vec<_>>()
+    };
+    let all = names(
+        &mut provider::ALL_TLS13_CIPHER_SUITES
+            .iter()
+            .map(|s| s.common.suite)
+            .chain(
+                provider::ALL_TLS12_CIPHER_SUITES
+                    .iter()
+                    .map(|s| s.common.suite),
+            ),
+    );
+    let defaults = names(
+        &mut provider::DEFAULT_TLS13_CIPHER_SUITES
+            .iter()
+            .map(|s| s.common.suite)
+            .chain(
+                provider::DEFAULT_TLS12_CIPHER_SUITES
+                    .iter()
+                    .map(|s| s.common.suite),
+            ),
+    );
+    assert_eq!(all.iter().filter(|n| n.contains("CCM")).count(), 3);
+    assert!(all.iter().all(|n| !n.contains("CCM_8")), "{all:?}");
+    assert!(defaults.iter().all(|n| !n.contains("CCM")), "{defaults:?}");
+    for suite in short_tag_suites() {
+        assert!(format!("{:?}", suite.suite()).contains("CCM_8"));
+    }
 }
 
 /// Whether a key type can sign for a suite: in TLS 1.2, ECDHE_RSA
