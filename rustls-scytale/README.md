@@ -1,7 +1,8 @@
 # rustls-scytale
 
 A cryptography provider for [rustls](https://github.com/rustls/rustls)
-that uses the [scytale](https://github.com/6d7770/scytale) library.
+that uses the
+[scytale](https://github.com/user-serviceable-parts/scytale) library.
 
 This provider is built against rustls 0.24.0-dev.1, the current
 development release, and will move to 0.24.0 when that is released.
