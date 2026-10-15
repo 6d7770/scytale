@@ -24,11 +24,12 @@ use rustls::crypto::kx::SupportedKxGroup;
 use rustls::crypto::{CryptoProvider, Identity};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use rustls::{
-    ClientConfig, Connection, RootCertStore, ServerConfig, ServerConnection,
-    SupportedCipherSuite, VecInput,
+    ClientConfig, Connection, RootCertStore, ServerConfig, SideData,
+    SupportedCipherSuite, Tcp,
 };
 use rustls_scytale::cipher_suite as cs;
-use rustls_util::Stream;
+
+mod blocking;
 
 const USAGE: &str = "usage: interop client|server PORT SUITE FILE...";
 
@@ -91,19 +92,20 @@ fn provider(
 }
 
 /// Sends `line`, reads one back, and checks the suite and group.
-fn talk(
-    conn: &mut impl Connection,
+fn talk<S: SideData>(
+    conn: &mut Connection<S, Tcp>,
     sock: &mut TcpStream,
+    queued: Vec<u8>,
     suite: SupportedCipherSuite,
     group: Option<&'static dyn SupportedKxGroup>,
     line: &str,
 ) -> Result<String, Box<dyn Error>> {
-    let mut input = VecInput::default();
-    let mut tls = Stream::new(&mut input, conn, sock);
+    let mut tls = blocking::Tls::new(conn, sock, queued);
     tls.write_all(line.as_bytes())?;
     tls.flush()?;
     let mut reply = String::new();
     BufReader::new(&mut tls).read_line(&mut reply)?;
+    let conn = &tls.conn;
     let got = conn.negotiated_cipher_suite();
     if got != Some(suite) {
         return Err(format!("negotiated {got:?}").into());
@@ -114,9 +116,7 @@ fn talk(
             return Err(format!("negotiated {got:?}").into());
         }
     }
-    conn.send_close_notify();
-    let mut input = VecInput::default();
-    Stream::new(&mut input, conn, sock).flush()?;
+    tls.close()?;
     Ok(reply)
 }
 
@@ -147,10 +147,11 @@ fn main() -> Result<(), Box<dyn Error>> {
             // The driver waits for this before starting the client.
             eprintln!("listening");
             let (mut sock, _) = listener.accept()?;
-            let mut conn = ServerConnection::new(Arc::new(config))?;
+            let mut conn = Connection::new(Arc::new(config))?;
             talk(
                 &mut conn,
                 &mut sock,
+                Vec::new(),
                 suite,
                 group,
                 "hello from rustls-scytale\n",
@@ -163,11 +164,14 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .with_root_certificates(roots)
                 .with_no_client_auth()?;
             let mut sock = TcpStream::connect(("localhost", port.parse()?))?;
-            let mut conn =
-                Arc::new(config).connect("localhost".try_into()?).build()?;
+            let mut hello = Vec::new();
+            let mut conn = Arc::new(config)
+                .connect("localhost".try_into()?)
+                .build(&mut hello)?;
             talk(
                 &mut conn,
                 &mut sock,
+                hello,
                 suite,
                 group,
                 "hello from rustls-scytale\n",

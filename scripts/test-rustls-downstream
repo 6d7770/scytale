@@ -35,8 +35,8 @@
 
 set -eu
 
-# rustls 0.24.0-dev.1.
-RUSTLS_COMMIT=bd9f7f59aa790da07010961188209e68384febe5
+# rustls 0.24.0-dev.2.
+RUSTLS_COMMIT=8a1f33461e8230f5adea6bb44cd8c6885ea26581
 
 cd "$(dirname "$0")/.."
 repo=$(pwd)
@@ -55,7 +55,7 @@ git apply "$patch"
 
 # Only this provider: with ring or aws-lc-rs in the build, a test
 # could pass on theirs and prove nothing about this one.
-features=scytale,brotli,zlib,log
+features=scytale,brotli,zlib,tracing
 if cargo tree -p rustls-test --no-default-features --features "$features" \
         -e normal,dev --prefix none |
         grep -E '^(ring|aws-lc-rs|aws-lc-sys|rustls-ring|rustls-aws-lc-rs) '

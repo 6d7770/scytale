@@ -22,8 +22,9 @@ use std::sync::Arc;
 
 use rustls::crypto::Identity;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
-use rustls::{ServerConfig, ServerConnection, VecInput};
-use rustls_util::Stream;
+use rustls::{Connection, ServerConfig};
+
+mod blocking;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let data = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/data/ecdsa-p256");
@@ -46,14 +47,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     let listener = TcpListener::bind("localhost:8443")?;
     eprintln!("listening on {}", listener.local_addr()?);
     let (mut sock, peer) = listener.accept()?;
-    let mut conn = ServerConnection::new(Arc::new(config))?;
-    let mut input = VecInput::default();
-    let mut tls = Stream::new(&mut input, &mut conn, &mut sock);
+    let mut conn = Connection::new(Arc::new(config))?;
+    let mut tls = blocking::Tls::new(&mut conn, &mut sock, Vec::new());
 
     tls.write_all(b"hello from rustls-scytale\n")?;
     tls.flush()?;
     let mut buf = [0u8; 256];
     let n = tls.read(&mut buf)?;
+    tls.close()?;
     eprintln!(
         "{peer}: {:?}, {:?}, {:?}, sent {:?}",
         conn.protocol_version(),

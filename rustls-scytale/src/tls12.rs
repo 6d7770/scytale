@@ -8,8 +8,8 @@ use rustls::ConnectionTrafficSecrets;
 use rustls::Error;
 use rustls::Tls12CipherSuite;
 use rustls::crypto::cipher::{
-    AeadKey, EncodedMessage, EncryptBuffer, InboundOpaque, Iv, KeyBlockShape,
-    MessageDecrypter, MessageEncrypter, Nonce, OutboundPlain,
+    AeadKey, EncryptBuffer, InboundOpaque, Iv, KeyBlockShape, Nonce,
+    OutboundPlain, Record, RecordDecrypter, RecordEncrypter,
     Tls12AeadAlgorithm, UnsupportedOperationError, make_tls12_aad,
 };
 use rustls::crypto::kx::KeyExchangeAlgorithm;
@@ -183,7 +183,7 @@ impl Tls12AeadAlgorithm for SaltedAead {
         key: AeadKey,
         iv: &[u8],
         extra: &[u8],
-    ) -> Box<dyn MessageEncrypter> {
+    ) -> Box<dyn RecordEncrypter> {
         let iv = Self::iv(iv, extra);
         Box::new(SaltedEncrypter {
             key: iv.as_ref().and(self.0.key(key.as_ref())),
@@ -192,7 +192,7 @@ impl Tls12AeadAlgorithm for SaltedAead {
         })
     }
 
-    fn decrypter(&self, key: AeadKey, iv: &[u8]) -> Box<dyn MessageDecrypter> {
+    fn decrypter(&self, key: AeadKey, iv: &[u8]) -> Box<dyn RecordDecrypter> {
         let salt: Option<[u8; SALT_LEN]> = iv.try_into().ok();
         Box::new(SaltedDecrypter {
             key: salt.and(self.0.key(key.as_ref())),
@@ -240,18 +240,23 @@ struct SaltedEncrypter {
     tag_len: usize,
 }
 
-impl MessageEncrypter for SaltedEncrypter {
+impl RecordEncrypter for SaltedEncrypter {
     fn encrypt<'a>(
         &mut self,
-        msg: EncodedMessage<OutboundPlain<'_>>,
+        msg: Record<OutboundPlain<'_>>,
         seq: u64,
         out: &'a mut [u8],
-    ) -> Result<EncodedMessage<&'a [u8]>, Error> {
+    ) -> Result<Record<&'a [u8]>, Error> {
         let key = self.key.as_ref().ok_or(Error::EncryptError)?;
         let total = self.encrypted_payload_len(msg.payload.len());
         let mut buf = EncryptBuffer::new(out, total)?;
         let nonce: [u8; NONCE_LEN] = Nonce::new(&self.iv, seq).to_array()?;
-        let aad = make_tls12_aad(seq, msg.typ, msg.version, msg.payload.len());
+        let aad = make_tls12_aad(
+            seq,
+            msg.typ,
+            msg.version.encode(),
+            msg.payload.len(),
+        );
         // The explicit part of the nonce, then the ciphertext, then
         // the tag.
         buf.extend_from_slice(&nonce[SALT_LEN..]);
@@ -260,11 +265,7 @@ impl MessageEncrypter for SaltedEncrypter {
             .seal(&nonce, &aad, &mut buf.as_mut()[EXPLICIT_LEN..])
             .map_err(|_| Error::EncryptError)?;
         buf.extend_from_slice(tag.as_ref());
-        Ok(EncodedMessage::new(
-            msg.typ,
-            msg.version,
-            buf.into_written(),
-        ))
+        Ok(Record::new(msg.typ, msg.version, buf.into_written()))
     }
 
     fn encrypted_payload_len(&self, payload_len: usize) -> usize {
@@ -278,12 +279,12 @@ struct SaltedDecrypter {
     tag_len: usize,
 }
 
-impl MessageDecrypter for SaltedDecrypter {
+impl RecordDecrypter for SaltedDecrypter {
     fn decrypt<'a>(
         &mut self,
-        mut msg: EncodedMessage<InboundOpaque<'a>>,
+        mut msg: Record<InboundOpaque<'a>>,
         seq: u64,
-    ) -> Result<EncodedMessage<&'a [u8]>, Error> {
+    ) -> Result<Record<&'a [u8]>, Error> {
         let key = self.key.as_ref().ok_or(Error::DecryptError)?;
         let payload = &mut msg.payload;
         // The nonce is the salt and whatever the sender put on the
@@ -297,14 +298,14 @@ impl MessageDecrypter for SaltedDecrypter {
         let mut nonce = [0u8; NONCE_LEN];
         nonce[..SALT_LEN].copy_from_slice(&self.salt);
         nonce[SALT_LEN..].copy_from_slice(&payload[..EXPLICIT_LEN]);
-        let aad = make_tls12_aad(seq, msg.typ, msg.version, text_len);
+        let aad = make_tls12_aad(seq, msg.typ, msg.version.version(), text_len);
         let len = key
             .open(&nonce, &aad, &mut payload[EXPLICIT_LEN..])
             .map_err(|_| Error::DecryptError)?;
         if len > MAX_FRAGMENT_LEN {
             return Err(Error::PeerSentOversizedRecord);
         }
-        Ok(msg.into_plain_message_range(EXPLICIT_LEN..EXPLICIT_LEN + len))
+        Ok(msg.into_plain_record_range(EXPLICIT_LEN..EXPLICIT_LEN + len))
     }
 }
 
@@ -319,11 +320,11 @@ impl Tls12AeadAlgorithm for ChaChaAead {
         key: AeadKey,
         iv: &[u8],
         _: &[u8],
-    ) -> Box<dyn MessageEncrypter> {
+    ) -> Box<dyn RecordEncrypter> {
         Box::new(ChaChaProtection::new(key, iv))
     }
 
-    fn decrypter(&self, key: AeadKey, iv: &[u8]) -> Box<dyn MessageDecrypter> {
+    fn decrypter(&self, key: AeadKey, iv: &[u8]) -> Box<dyn RecordDecrypter> {
         Box::new(ChaChaProtection::new(key, iv))
     }
 
@@ -365,28 +366,29 @@ impl ChaChaProtection {
     }
 }
 
-impl MessageEncrypter for ChaChaProtection {
+impl RecordEncrypter for ChaChaProtection {
     fn encrypt<'a>(
         &mut self,
-        msg: EncodedMessage<OutboundPlain<'_>>,
+        msg: Record<OutboundPlain<'_>>,
         seq: u64,
         out: &'a mut [u8],
-    ) -> Result<EncodedMessage<&'a [u8]>, Error> {
+    ) -> Result<Record<&'a [u8]>, Error> {
         let key = self.key.as_ref().ok_or(Error::EncryptError)?;
         let total = self.encrypted_payload_len(msg.payload.len());
         let mut buf = EncryptBuffer::new(out, total)?;
         let nonce = Nonce::new(&self.iv, seq).to_array()?;
-        let aad = make_tls12_aad(seq, msg.typ, msg.version, msg.payload.len());
+        let aad = make_tls12_aad(
+            seq,
+            msg.typ,
+            msg.version.encode(),
+            msg.payload.len(),
+        );
         buf.extend_from_chunks(&msg.payload);
         let tag = key
             .seal(&nonce, &aad, buf.as_mut())
             .map_err(|_| Error::EncryptError)?;
         buf.extend_from_slice(tag.as_ref());
-        Ok(EncodedMessage::new(
-            msg.typ,
-            msg.version,
-            buf.into_written(),
-        ))
+        Ok(Record::new(msg.typ, msg.version, buf.into_written()))
     }
 
     fn encrypted_payload_len(&self, payload_len: usize) -> usize {
@@ -394,19 +396,19 @@ impl MessageEncrypter for ChaChaProtection {
     }
 }
 
-impl MessageDecrypter for ChaChaProtection {
+impl RecordDecrypter for ChaChaProtection {
     fn decrypt<'a>(
         &mut self,
-        mut msg: EncodedMessage<InboundOpaque<'a>>,
+        mut msg: Record<InboundOpaque<'a>>,
         seq: u64,
-    ) -> Result<EncodedMessage<&'a [u8]>, Error> {
+    ) -> Result<Record<&'a [u8]>, Error> {
         let key = self.key.as_ref().ok_or(Error::DecryptError)?;
         let payload = &mut msg.payload;
         let Some(text_len) = payload.len().checked_sub(TAG_LEN) else {
             return Err(Error::DecryptError);
         };
         let nonce = Nonce::new(&self.iv, seq).to_array()?;
-        let aad = make_tls12_aad(seq, msg.typ, msg.version, text_len);
+        let aad = make_tls12_aad(seq, msg.typ, msg.version.version(), text_len);
         let len = key
             .open(&nonce, &aad, payload)
             .map_err(|_| Error::DecryptError)?;
@@ -414,6 +416,6 @@ impl MessageDecrypter for ChaChaProtection {
             return Err(Error::PeerSentOversizedRecord);
         }
         payload.truncate(len);
-        Ok(msg.into_plain_message())
+        Ok(msg.into_plain_record())
     }
 }
