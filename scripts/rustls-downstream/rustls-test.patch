@@ -11,7 +11,7 @@ index ed6312a..edaa7ca 100644
  webpki = { workspace = true }
  
 diff --git a/bogo/config.json.in b/bogo/config.json.in
-index 43ae390..3c011bc 100644
+index 43ae390..833cbf0 100644
 --- a/bogo/config.json.in
 +++ b/bogo/config.json.in
 @@ -140,7 +140,7 @@
@@ -23,7 +23,7 @@ index 43ae390..3c011bc 100644
      "MLKEMKeyShareIncludedSecond-MLKEM1024": "we only include a share for the first configured group",
      "MLKEMKeyShareIncludedThird-MLKEM1024": "we only include a share for the first configured group",
      "MultiplePQGroups-MLKEM1024": "we only include a share for the first configured group",
-@@ -148,7 +148,7 @@
+@@ -148,10 +148,13 @@
  #else
      "*MLKEM*": "not implemented",
  #endif
@@ -32,6 +32,12 @@ index 43ae390..3c011bc 100644
      "PostQuantumEnabledByDefaultForAServer": "*ring* has no ML-KEM",
      "PostQuantumEnabledByDefaultInClients": "*ring* has no ML-KEM",
  #endif
++#if defined(SCYTALE)
++    "*-VerifyDefault-ML-DSA-*-TLS13": "rustls-scytale accepts ML-DSA by default",
++#endif
+ 
+ #ifdef RING
+     "*-ECDSA_P521_SHA512-*": "no p521 signatures/verification",
 diff --git a/bogo/runme b/bogo/runme
 index 8afbb2a..1385e90 100755
 --- a/bogo/runme
