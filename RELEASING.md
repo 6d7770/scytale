@@ -57,12 +57,12 @@ For each crate going out:
   `scytale = { path = ..., version = "0.N.M" }` lines, where the
   requirement no longer accepts it or a dependant needs what it adds.
 - `scytale-ring`: the `ring = { package = "scytale-ring", version =
-  "0.N" }` example lines in `README.md` and `scytale-ring/README.md`,
-  on a minor bump, and the "Which ring" table in the shim's README,
-  which gains a row when the ring API it presents changes and
-  otherwise has its versions checked.
-- `rustls-scytale`: the `rustls-scytale = "0.N"` lines in `README.md`
-  and `rustls-scytale/README.md`, on a minor bump, and the "Which
+  "0.N" }` example line in `scytale-ring/README.md`, on a minor bump,
+  and the "Which ring" table in the shim's README, which gains a row
+  when the ring API it presents changes and otherwise has its
+  versions checked.
+- `rustls-scytale`: the `rustls-scytale = "0.N"` line in
+  `rustls-scytale/README.md`, on a minor bump, and the "Which
   rustls" table in the provider's README, kept the same way.
 - `scytale-cli`: the `.TH` line's date and `scytale 0.N` in
   `scytale-cli/scytale.1`. `cargo test -p scytale-cli` fails if this
