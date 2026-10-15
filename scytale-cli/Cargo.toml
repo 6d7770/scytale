@@ -6,9 +6,9 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-repository = "https://github.com/6d7770/scytale"
+repository = "https://github.com/user-serviceable-parts/scytale"
 # A binary has no rustdoc; the manual is the documentation.
-documentation = "https://github.com/6d7770/scytale/blob/main/scytale-cli/scytale.1.md"
+documentation = "https://github.com/user-serviceable-parts/scytale/blob/main/scytale-cli/scytale.1.md"
 readme = "README.md"
 keywords = ["cryptography", "cli", "encryption", "signature", "post-quantum"]
 categories = ["command-line-utilities", "cryptography"]
