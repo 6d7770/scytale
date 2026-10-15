@@ -182,7 +182,7 @@ builds wherever they do; the tests run the binary, and compare with
 `openssl` when it is on the path.
 
 The manual is `scytale.1` beside this file, which `cargo install`
-does not place, and [`scytale.1.md`](scytale.1.md) is the same text
+does not place, and [`scytale.1.md`][manual] is the same text
 rendered for reading here. To read the manual in place, `man -l
 scytale.1`; to install it:
 
@@ -196,3 +196,5 @@ codes, so a call can be got right without it.
 ## License
 
 BSD-2-Clause, as scytale.
+
+[manual]: https://github.com/user-serviceable-parts/scytale/blob/main/scytale-cli/scytale.1.md

@@ -2,7 +2,7 @@
 
 A drop-in replacement for [ring](https://github.com/briansmith/ring)
 that does the work with
-[scytale](https://github.com/user-serviceable-parts/scytale).
+[scytale](https://github.com/user-serviceable-parts/scytale/tree/main/scytale).
 
 It presents ring 0.17's public API, module for module and name for
 name, and the library is called `ring`, so code written against ring
@@ -49,10 +49,10 @@ That is the whole change. `use ring::aead;`, `ring::digest::SHA256`,
 working, because the package is presented under the library name
 `ring`. Change the line back, and ring is back.
 
-To see it done, this repository does exactly that to ring's own test
-suite: `ring-tests/Cargo.toml` holds the line above, and the files
-under `ring-tests/tests/` are ring's, byte for byte, passing against
-scytale.
+To see it done, the scytale repository does exactly that to ring's
+own test suite, in [`ring-tests`][ring-tests] beside this crate: its
+`Cargo.toml` holds the line above, and the files under its `tests/`
+are ring's, byte for byte, passing against scytale.
 
 ### What it does not reach
 
@@ -61,13 +61,13 @@ names ring itself, such as rustls or rustls-webpki, keeps the ring in
 its own manifest: cargo's `[patch]` cannot substitute a package under
 another name, and this package is not called `ring`. To run such a
 crate over scytale, make the same one-line change in its manifest;
-`scripts/test-ring-downstream` in the scytale repository does that to
-rustls and rustls-webpki and runs their test suites, which pass.
+[`scripts/test-ring-downstream`][downstream] in the scytale
+repository does that to rustls and rustls-webpki and runs their test
+suites, which pass.
 
 From rustls 0.24, which takes its cryptography from a provider the
-program names, use
-[rustls-scytale](https://github.com/user-serviceable-parts/scytale/tree/main/rustls-scytale)
-instead: it is that provider, built on scytale directly.
+program names, use [rustls-scytale][provider] instead: it is that
+provider, built on scytale directly.
 
 ## Which ring
 
@@ -83,15 +83,17 @@ here says so.
 
 ## What is tested
 
-- ring's own test suite, every file of it, vendored unchanged under
-  `ring-tests/` with its vector files and ring's licence beside them.
-  Every test passes; nothing is skipped or altered.
+- ring's own test suite, every file of it, vendored unchanged in
+  [`ring-tests`][ring-tests] in the scytale repository, with its
+  vector files and ring's licence beside them. Every test passes;
+  nothing is skipped or altered.
 - Unit tests for every module, against published vectors (FIPS 180,
   RFC 4231, RFC 5869, RFC 7748, RFC 8032, RFC 8439, RFC 9001) and
   against keys and signatures made by OpenSSL.
 - rustls-webpki 0.103 and rustls 0.23 run their own test suites with
-  this crate as their ring, by `scripts/test-ring-downstream` in the
-  scytale repository, in CI on every push.
+  this crate as their ring, by
+  [`scripts/test-ring-downstream`][downstream] in the scytale
+  repository, in CI on every push.
 
 ## Where it differs from ring
 
@@ -108,5 +110,10 @@ here says so.
 
 ## Licence
 
-BSD-2-Clause, as scytale. The files under `ring-tests/` are ring's,
-under ring's licence, which is beside them.
+BSD-2-Clause, as scytale. ring's test suite, in
+[`ring-tests`][ring-tests] in the repository and not in this crate,
+is under ring's licence, which is beside it.
+
+[ring-tests]: https://github.com/user-serviceable-parts/scytale/tree/main/scytale-ring/ring-tests
+[downstream]: https://github.com/user-serviceable-parts/scytale/blob/main/scripts/test-ring-downstream
+[provider]: https://github.com/user-serviceable-parts/scytale/tree/main/rustls-scytale
