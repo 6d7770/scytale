@@ -1,8 +1,7 @@
 [package]
 name = "scytale-cli"
 description = "The scytale cryptography library from a shell: AES, ChaCha20, AEAD, hashes, MACs, KDFs, keys, signatures, key agreement, ML-KEM"
-# scytale's version: the two are released together.
-version.workspace = true
+version = "0.9.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -22,7 +21,7 @@ path = "src/main.rs"
 doc = false
 
 [dependencies]
-# Moves with the workspace version.
+# The oldest release with everything this crate uses.
 scytale = { path = "../scytale", version = "0.9" }
 zeroize = "1"
 # The parser and its "did you mean" for a mistyped option: no colour

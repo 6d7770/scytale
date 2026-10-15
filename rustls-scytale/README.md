@@ -151,8 +151,8 @@ provider.tls12_cipher_suites.to_mut().extend([
 
 ## Which rustls
 
-The version number is scytale's, since the two are released
-together, so it says nothing about rustls. This table does:
+rustls-scytale's version number is its own and says nothing about
+rustls. This table does:
 
 | rustls-scytale | rustls |
 | --- | --- |
