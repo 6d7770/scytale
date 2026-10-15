@@ -1,11 +1,19 @@
 # scytale
 
 [![CI][ci-badge]][ci]
+[![crates.io][version-badge]][crate]
+[![docs.rs][docs-badge]][docs]
+[![MSRV][msrv-badge]][crate]
 [![BSD-2-Clause][license-badge]][license]
 
 [ci-badge]: https://github.com/user-serviceable-parts/scytale/actions/workflows/ci.yml/badge.svg?branch=main
 [ci]: https://github.com/user-serviceable-parts/scytale/actions/workflows/ci.yml
-[license-badge]: https://img.shields.io/badge/license-BSD--2--Clause-blue.svg
+[version-badge]: https://img.shields.io/crates/v/scytale.svg
+[crate]: https://crates.io/crates/scytale
+[docs-badge]: https://docs.rs/scytale/badge.svg
+[docs]: https://docs.rs/scytale
+[msrv-badge]: https://img.shields.io/crates/msrv/scytale.svg
+[license-badge]: https://img.shields.io/crates/l/scytale.svg
 [license]: LICENSE
 
 Correct, fast, portable cryptography in Rust. The library, scytale,
