@@ -23,6 +23,21 @@ post-quantum key encapsulation and signatures, and random numbers. It
 is `no_std`, has two dependencies, needs no C compiler and no build
 script, and has no feature flags to get wrong.
 
+## The crates
+
+This repository holds four crates. This page is about the library;
+each of the others has a README of its own.
+
+| Crate | What it is |
+| --- | --- |
+| [scytale](https://github.com/user-serviceable-parts/scytale/tree/main/scytale) | The library. |
+| [scytale-ring](https://github.com/user-serviceable-parts/scytale/tree/main/scytale-ring) | ring 0.17's API over scytale, under the name `ring`, so code written against ring builds unchanged. |
+| [rustls-scytale](https://github.com/user-serviceable-parts/scytale/tree/main/rustls-scytale) | A cryptography provider for rustls 0.24: post-quantum key exchange first, ML-DSA, and HPKE for Encrypted Client Hello. |
+| [scytale-cli](https://github.com/user-serviceable-parts/scytale/tree/main/scytale-cli) | The `scytale` command, the library from a shell. |
+
+Each has its own version number. A release is tagged with the
+crate's name and version, as in `scytale-v0.10.0`.
+
 ## The name
 
 A [scytale][wiki] is a rod. The Spartans wound a strip of leather
@@ -573,81 +588,6 @@ erase.
 
 The expanded key inside a cipher is wiped when the cipher is
 dropped, as it always was, and the generator wipes its state.
-
-### In place of ring
-
-[`scytale-ring`](scytale-ring) presents ring 0.17's API over scytale,
-under the library name `ring`, so code written against ring compiles
-unchanged:
-
-```toml
-[dependencies]
-ring = { package = "scytale-ring", version = "0.9" }
-```
-
-rustls and rustls-webpki pass their own test suites on it
-(`scripts/test-ring-downstream`). Its README says where it differs
-from ring, the main difference being deterministic ECDSA signatures.
-
-### Under rustls
-
-rustls 0.24 carries no cryptography of its own; a program hands it a
-provider. [`rustls-scytale`](rustls-scytale) is one, built on scytale
-directly:
-
-```toml
-[dependencies]
-rustls-scytale = "0.9"
-```
-
-```rust,ignore
-let provider = Arc::new(rustls_scytale::DEFAULT_PROVIDER);
-let config = rustls::ClientConfig::builder(provider)
-    .with_root_certificates(roots)
-    .with_no_client_auth()?;
-```
-
-It offers X25519MLKEM768 as its first key share, accepts and serves
-ML-DSA certificates, and has HPKE for Encrypted Client Hello.
-rustls's own API test suite and BoGo, BoringSSL's TLS conformance
-runner, pass with it as the provider
-(`scripts/test-rustls-downstream`), and it interoperates with
-OpenSSL over every suite it has (`scripts/test-openssl-interop`).
-Its README says which rustls it works with and where it differs.
-
-### From a shell
-
-[`scytale-cli`](scytale-cli) builds a `scytale` command for scripts,
-one subcommand per module of the library:
-
-```sh
-cargo install scytale-cli
-
-scytale random 32 --raw -o key.bin
-scytale aead encrypt aes-256-gcm -k file:key.bin -n hex:$NONCE \
-    --aad str:v1 < report.pdf > report.sealed
-scytale aead decrypt aes-256-gcm -k file:key.bin -n hex:$NONCE \
-    --aad str:v1 < report.sealed > report.pdf
-
-scytale key generate ml-dsa-65 -o sign.pem
-scytale key public sign.pem -o sign.pub
-scytale sig sign ml-dsa-65 -k sign.pem release.tar > release.sig
-scytale sig verify ml-dsa-65 -p sign.pub -s file:release.sig release.tar
-```
-
-The algorithm is the first word after the verb on every call, never
-an option and never defaulted. Keys and every other byte-valued
-option are written `hex:`, `file:`, `fd:`, `env:` or `str:`, never
-bare, so a value is never read the wrong way, and a key of the wrong
-length for the algorithm is refused rather than padded or cut, with
-both lengths in the message. Encryption streams, so a pipe of
-any size goes through in fixed memory; authenticated decryption
-writes nothing until the tag has checked. Exit status 1 means a tag,
-signature or padding did not verify, 2 a request that could not be
-carried out as asked, 3 anything else. No configuration file, no
-privileges, and no cryptography of its own: everything it does, the
-library does. `scytale list` prints every algorithm name; `--help`
-on any subcommand says what it takes.
 
 ## Speed
 
