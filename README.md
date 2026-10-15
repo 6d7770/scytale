@@ -16,13 +16,8 @@
 [license-badge]: https://img.shields.io/crates/l/scytale.svg
 [license]: LICENSE
 
-Correct, fast, portable cryptography in Rust. The library, scytale,
-covers ciphers, authenticated encryption, hashes, message
-authentication, key derivation, key agreement, public-key encryption,
-signatures, post-quantum key encapsulation and signatures, and random
-numbers; it is `no_std`, has two dependencies, and needs no C compiler
-and no build script. This repository holds it and three crates that
-put it to work.
+Correct, fast, portable cryptography in Rust: the scytale library,
+and three crates that put it to work.
 
 ## The crates
 
@@ -73,29 +68,19 @@ English ended up.
 Everything builds with a stable Rust toolchain, 1.88 or later.
 
 ```sh
-cargo test                     # unit tests and the one-shot vector suites
-cargo test-extended            # adds the Monte Carlo and large data suites
-scripts/ci-check               # formatting, lints and style, as CI runs them
+cargo test                     # every crate's tests
+cargo test-extended            # adds the long suites marked #[ignore]
+scripts/ci-check               # formatting and style, as CI's style job
 scripts/test-all-arches        # every architecture, foreign ones emulated
-scripts/test-ring-downstream   # rustls and webpki on scytale-ring
+scripts/test-ring-downstream   # rustls and rustls-webpki on scytale-ring
 scripts/test-rustls-downstream # rustls's tests and BoGo on rustls-scytale
 scripts/test-openssl-interop   # every rustls-scytale suite against OpenSSL
 scripts/bench                  # measures rather than checks
 ```
 
-The library's suites live inside the crate, under `#[cfg(test)]`,
-rather than in `tests/`: an integration test is a separate crate and
-would see only the public types, and each implementation behind them
-is meant to be validated in its own right. The benchmark is there for
-the same reason, and runs as an ignored test that `scripts/bench`
-starts.
-
-The ACVP and Project Wycheproof vectors live in
-`scytale/tests/vectors` and are not shipped in the published crate,
-to keep it small. Building and using the library never needs them;
-running the tests from a downloaded crate skips those suites and
-leaves the standards' own vectors, which are built into the unit
-tests, as the check.
+Each crate's README says what it is tested against. The ACVP,
+Wycheproof and HPKE vectors are in `scytale/tests/vectors` and ring's
+suite in `scytale-ring/ring-tests`; neither is in a published crate.
 
 `scripts/test-all-arches` runs the host architecture directly and the
 others with [cross](https://github.com/cross-rs/cross), which needs
@@ -104,13 +89,13 @@ rustls-webpki at pinned releases and run their own test suites
 against these crates; the rustls one needs Go, a C compiler and `cpp`
 for BoGo. `scripts/test-openssl-interop` needs OpenSSL 3.
 
-Continuous integration runs all of it but the benchmark on every
-push: the test suite natively on x86-64, arm64 and riscv64 runners,
-under qemu as older and newer processors of each, and on 32-bit x86
-and WebAssembly; the library built for targets with no operating
-system; the downstream suites, the interop and the packaging of every
-crate. The benchmark runs on the native runners when the `Bench`
-workflow is started by hand.
+Continuous integration covers the same ground on every push: every
+crate's tests natively on x86-64, arm64 and riscv64 runners and on
+32-bit x86 and WebAssembly, the library's under qemu as older and
+newer processors of each architecture, the library built for targets
+with no operating system, the style checks, the downstream suites,
+the interop, and the packaging of every crate. The benchmark runs on
+the native runners when the `Bench` workflow is started by hand.
 
 ## Security
 
@@ -122,9 +107,14 @@ rustls provider adds, and how to report a vulnerability.
 
 BSD 2-Clause. See [LICENSE](LICENSE).
 
-The test vectors under `scytale/tests/vectors` come from the NIST
-[ACVP-Server][acvp-server] project and carry their own notice, in
-`LICENSE.txt` beside them. scytale-ring's test suite is ring's own,
-under ring's licence, beside it in `scytale-ring/ring-tests`.
+The test vectors under `scytale/tests/vectors` are others' work,
+unmodified, each set with its notice beside it: the NIST
+[ACVP-Server][acvp-server] project's, Project
+[Wycheproof][wycheproof]'s under the Apache License 2.0, and the
+CFRG's for [HPKE][hpke]. ring's test suite, vendored in
+`scytale-ring/ring-tests`, is under ring's licence, which is beside
+it.
 
 [acvp-server]: https://github.com/usnistgov/ACVP-Server
+[wycheproof]: https://github.com/C2SP/wycheproof
+[hpke]: https://github.com/cfrg/draft-irtf-cfrg-hpke

@@ -63,7 +63,7 @@ key formats other software stores keys in.
 It is tested to the same extent. The standards' own vectors are built
 into the unit tests, and on top of them run the NIST [ACVP][acvp]
 suites and the [Project Wycheproof][wycheproof] files, more than
-seventy thousand vector cases before the Monte Carlo suites add
+eighty-eight thousand vector cases before the Monte Carlo suites add
 several million chained calls of their own. Every implementation of a
 primitive is put through the whole vector set for it, at every key
 size, and the whole suite runs on x86-64, aarch64 and riscv64 hardware
@@ -191,8 +191,8 @@ work.
 | FF1, FF3-1 | format preserving | see their documentation first |
 | KW, KWP | key wrapping | deterministic; for keys, not messages |
 
-`encrypt_blocks` on the cipher itself encrypts each block
-independently, which is ECB. On its own that is not a safe way to
+`encrypt` on the cipher itself encrypts each block independently,
+which is ECB. On its own that is not a safe way to
 encrypt a message, because equal blocks produce equal ciphertext. Use
 a mode.
 
@@ -393,8 +393,8 @@ The x86-64 and arm64 rows are exercised on real silicon: the
 continuous integration matrix runs the whole test suite natively on
 runners of both, so the assembly is run by the processor it was
 written for. The RISC-V rows are not. The riscv64 runner is a plain
-`rv64imafdcsu` machine with none of the extensions below, so it
-reports every one of those rows as unavailable, and they are covered
+`rv64imafdcsu` machine with none of the extensions in the table, so
+it reports every one of those rows as unavailable, and they are covered
 under qemu instead -- at two vector lengths, which is more than one
 machine would give, but it is emulation and not silicon.
 
@@ -408,10 +408,10 @@ which only AArch64 has instructions for. On x86-64 the portable
 permutation is compiled a second time for BMI1 and BMI2, whose
 `andn` and `rorx` are chi and rho in fewer instructions, and on
 RISC-V for Zbb, whose `andn` and `rori` are the same two; elsewhere
-it is portable. ChaCha20 needs no
-special instructions, only a vector unit: several blocks are computed
-at once, eight with AVX2, four with NEON, and as many as a register
-holds on RISC-V. Poly1305 is portable everywhere.
+it is portable. ChaCha20 needs no special instructions, only a vector
+unit: several blocks are computed at once, eight with AVX2, four with
+NEON, and as many as a register holds on RISC-V. Poly1305 is portable
+everywhere.
 
 The prime curves and RSA are integer arithmetic rather than a
 primitive with instructions of its own, and what they use is the
@@ -562,12 +562,18 @@ running on battery, expect about half of each figure.
 
 ## How it is tested
 
+The suites live inside the crate, under `#[cfg(test)]`, rather than
+in `tests/`: an integration test is a separate crate and would see
+only the public types, and each implementation behind them is meant
+to be validated in its own right.
+
 The standards' own vectors are built into the unit tests, so
 `cargo test` on the published crate checks every primitive against
-them. The ACVP and Project Wycheproof vectors are not shipped, to keep
-the crate small; the suites that read them run from a checkout of the
-[repository][repo], whose README says how, and in its continuous
-integration on every push, natively on x86-64, arm64 and riscv64.
+them. The ACVP, Project Wycheproof and CFRG HPKE vectors are not
+shipped, to keep the crate small; the suites that read them run from
+a checkout of the [repository][repo], whose README says how, and in
+its continuous integration on every push, natively on x86-64, arm64
+and riscv64.
 
 The public-key algorithms and the KDFs run against both: ACVP's
 ML-KEM, ML-DSA, SLH-DSA, RSA, KTS-IFC, ECDSA, EDDSA, XECDH, KDA and
