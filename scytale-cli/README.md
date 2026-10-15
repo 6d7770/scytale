@@ -74,8 +74,8 @@ scytale kdf hkdf sha256 --ikm file:shared.bin --salt str:session-1 \
     --info str:encrypt --length 32
 ```
 
-Interoperate with `openssl enc`, which pads CBC with PKCS#7 as this
-does by default:
+Interoperate with `openssl enc`, which pads CBC with PKCS#7; here the
+padding is always named:
 
 ```sh
 openssl enc -aes-128-cbc -K $KEY -iv $IV < plain > cipher
@@ -107,17 +107,17 @@ it, and never bare:
 
 The algorithm fixes the length of a key, an IV or a nonce
 (`aes-128-gcm` takes 16 bytes of key, `aes-256-xts` 32 in each of
-`--key` and `--tweak-key`), and a value of another length is refused
-with both lengths in the message and none of the bytes. Nothing is padded or cut to fit. `hex:` on a
-command line is visible to every process on the machine through `ps`
-and stays in the shell's history, so a key is better given as
-`file:` or `fd:`; `hex:` is there for the script that already holds
-one.
+`--key` and `--tweak-key`), and a value of another length is refused with both
+lengths in the message and none of the bytes. Nothing is padded or
+cut to fit. `hex:` on a command line is visible to every process on
+the machine through `ps` and stays in the shell's history, so a key
+is better given as `file:` or `fd:`; `hex:` is there for the script
+that already holds one.
 
 Key files are PEM: `PRIVATE KEY` (PKCS#8) and `PUBLIC KEY`, which is
-what `openssl` and everything else write, and
-the bare `RSA PRIVATE KEY`, `RSA PUBLIC KEY` and `EC PRIVATE KEY`
-forms are read too. A command that takes a key file reads the
+what `openssl` and everything else write, and the bare
+`RSA PRIVATE KEY`, `RSA PUBLIC KEY` and `EC PRIVATE KEY` forms are
+read too. A command that takes a key file reads the
 algorithm out of the file, so nothing is named twice. A file that
 `generate` writes is created readable by its owner alone, as is any
 file a secret is written to with `-o`.
@@ -178,12 +178,11 @@ cargo install scytale-cli
 
 or, from a checkout of the repository, `cargo install --path
 scytale-cli`. The crate depends on scytale, zeroize and clap, and
-builds wherever they do; the tests run the binary, and compare with
-`openssl` when it is on the path.
+builds wherever they do.
 
 The manual is `scytale.1` beside this file, which `cargo install`
-does not place, and [`scytale.1.md`](scytale.1.md) is the same text
-rendered for reading here. To read the manual in place, `man -l
+does not place, and [`scytale.1.md`][manual] is the same text
+rendered for reading on GitHub. To read the manual in place, `man -l
 scytale.1`; to install it:
 
 ```sh
@@ -193,6 +192,21 @@ install -m 644 scytale.1 /usr/local/share/man/man1/
 `--help` on every subcommand ends with the value syntax and the exit
 codes, so a call can be got right without it.
 
+## How it is tested
+
+The tests run the built binary as a process: every family round-trips
+through the command line, wrong input is refused with the right exit
+status, and where `openssl` is on the path the two must agree: our
+CBC ciphertext matches openssl's, and openssl's decrypts here; a key
+openssl generates loads here and one generated here loads there; and
+openssl verifies an ECDSA signature made here. The manual is checked
+against the help and the names `list` prints, so a subcommand, option
+or name it misses fails the tests. The cryptography itself is
+[scytale's][scytale], and is tested there.
+
 ## License
 
 BSD-2-Clause, as scytale.
+
+[manual]: https://github.com/user-serviceable-parts/scytale/blob/main/scytale-cli/scytale.1.md
+[scytale]: https://github.com/user-serviceable-parts/scytale/tree/main/scytale#how-it-is-tested

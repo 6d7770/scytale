@@ -7,9 +7,7 @@ rust-version.workspace = true
 license.workspace = true
 repository = "https://github.com/user-serviceable-parts/scytale"
 documentation = "https://docs.rs/scytale"
-# The README lives at the workspace root; cargo only looks in the
-# package directory on its own.
-readme = "../README.md"
+readme = "README.md"
 keywords = ["encryption", "hash", "mac", "signature", "post-quantum"]
 categories = [
     "cryptography",

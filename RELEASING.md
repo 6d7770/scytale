@@ -75,19 +75,19 @@ forgotten.
 
 ## 3. Check what the READMEs claim
 
-- The ACVP and Wycheproof case count in `README.md` ("The corpus is
-  N files holding M cases") is hand-maintained and counts the cases
-  the drivers run, once per suite, after every documented skip.
-  Recompute it if a suite was added or removed: for a suite that
-  skips nothing the file's AFT total is the number; for one that
+- The ACVP and Wycheproof case count in `scytale/README.md` ("The
+  corpus is N files holding M cases") is hand-maintained and counts
+  the cases the drivers run, once per suite, after every documented
+  skip. Recompute it if a suite was added or removed: for a suite
+  that skips nothing the file's AFT total is the number; for one that
   skips groups, raise its minimum-count assertion and read the true
   count from the failure.
-- Any speed figure in `README.md` or the shim's README that a change
-  this release could have moved: rerun `scripts/bench` for it on the
-  reference machine, or dispatch `bench.yml` for another
+- Any speed figure in `scytale/README.md` or the shim's README that a
+  change this release could have moved: rerun `scripts/bench` for it
+  on the reference machine, or dispatch `bench.yml` for another
   architecture, and update `scytale/benchmarks/`. No figure goes out
   that was not measured on the code being released.
-- The algorithm tables, if a primitive was added: `README.md`,
+- The algorithm tables, if a primitive was added: `scytale/README.md`,
   `scytale/src/lib.rs`, `SECURITY.md`, the shim's README, and the
   tool's README and manual.
 

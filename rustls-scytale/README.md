@@ -1,8 +1,7 @@
 # rustls-scytale
 
 A cryptography provider for [rustls](https://github.com/rustls/rustls)
-that uses the
-[scytale](https://github.com/user-serviceable-parts/scytale) library.
+that uses the [scytale][scytale] library.
 
 This provider is built against rustls 0.24.0-dev.2, the current
 development release, and will move to 0.24.0 when that is released.
@@ -26,7 +25,7 @@ This crate is not part of the rustls project, nor endorsed by it in any way.
 ```toml
 [dependencies]
 rustls = "=0.24.0-dev.2"
-rustls-scytale = "0.9"
+rustls-scytale = "=0.10.0-dev.2"
 ```
 
 Hand the provider to a configuration:
@@ -148,7 +147,7 @@ rustls. This table does:
 
 | rustls-scytale | rustls |
 | --- | --- |
-| 0.9 | 0.24.0-dev.1, pinned exactly |
+| 0.10.0-dev.2 | 0.24.0-dev.2, pinned exactly |
 
 While rustls 0.24 is a development release, each rustls-scytale
 release pins one rustls development release exactly and carries its
@@ -168,17 +167,24 @@ in a new rustls-scytale minor version, and a row here says so.
   and keys OpenSSL made (`tests/data/generate`): every suite with
   every key type, every key exchange group, client authentication
   with every key form, resumption.
-- `scripts/test-rustls-downstream` in the scytale repository runs
-  rustls's own API suite with this crate as the provider, rustls's
-  HPKE test against the RFC 9180 vectors and against aws-lc-rs both
-  ways, and BoGo, Encrypted Client Hello included, with no failures.
-- `scripts/test-openssl-interop` connects this crate to OpenSSL
-  over every suite it has, both ways, and over SECP384R1MLKEM1024
-  where the OpenSSL has it (3.5 and later). BoGo cannot reach the CCM
-  suites, since BoringSSL has none; here another implementation
-  reads every record this one writes.
+- [`scripts/test-rustls-downstream`][downstream] in the scytale
+  repository runs rustls's own API suite with this crate as the
+  provider, rustls's HPKE test against the RFC 9180 vectors and
+  against aws-lc-rs both ways, and BoGo, Encrypted Client Hello
+  included, with no failures. Six BoGo tests that expect ML-DSA to be
+  refused unless asked for, as BoringSSL does, are set aside: this
+  provider accepts it by default.
+- [`scripts/test-openssl-interop`][interop] connects this crate to
+  OpenSSL over every suite it has, both ways, and over
+  SECP384R1MLKEM1024 where the OpenSSL has it (3.5 and later). BoGo
+  cannot reach the CCM suites, since BoringSSL has none; here another
+  implementation reads every record this one writes.
 - Both scripts run in CI on every push.
 
 ## Licence
 
 BSD-2-Clause, as scytale.
+
+[downstream]: https://github.com/user-serviceable-parts/scytale/blob/main/scripts/test-rustls-downstream
+[interop]: https://github.com/user-serviceable-parts/scytale/blob/main/scripts/test-openssl-interop
+[scytale]: https://github.com/user-serviceable-parts/scytale/tree/main/scytale
