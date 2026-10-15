@@ -352,11 +352,6 @@ and this is what it promises about them.
   a program offers or accepts one only where it names it. A server
   that adds one accepts it from any client that asks for it first.
 - **Not FIPS validated.** Every `fips()` says so.
-- **ML-DSA in TLS 1.2.** rustls gives a provider no way to offer a
-  signature scheme for TLS 1.3 only, so a TLS 1.2 server's request
-  for a client certificate lists ML-DSA, which its specification
-  does not define for TLS 1.2. The signatures are as sound there as
-  anywhere; the use is outside the standard.
 - **Not the provider's.** The handshake state machine, certificate
   path validation and every protocol decision are rustls's and
   webpki's, and are held to their own tests; this provider runs

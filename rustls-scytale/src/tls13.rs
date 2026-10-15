@@ -9,11 +9,11 @@ use rustls::Tls13CipherSuite;
 use rustls::crypto::CipherSuite;
 use rustls::crypto::CipherSuiteCommon;
 use rustls::crypto::cipher::{
-    AeadKey, EncodedMessage, EncryptBuffer, InboundOpaque, Iv,
-    MessageDecrypter, MessageEncrypter, Nonce, OutboundPlain,
-    Tls13AeadAlgorithm, UnsupportedOperationError, make_tls13_aad,
+    AeadKey, EncryptBuffer, InboundOpaque, Iv, Nonce, OutboundPlain, Record,
+    RecordDecrypter, RecordEncrypter, Tls13AeadAlgorithm,
+    UnsupportedOperationError, make_tls13_aad,
 };
-use rustls::enums::{ContentType, ProtocolVersion};
+use rustls::enums::ContentType;
 use rustls::version::TLS13_VERSION;
 
 use crate::aead::{Algorithm, SealingKey};
@@ -106,11 +106,11 @@ pub static TLS13_AES_128_CCM_8_SHA256: &Tls13CipherSuite = &Tls13CipherSuite {
 struct Aead(Algorithm);
 
 impl Tls13AeadAlgorithm for Aead {
-    fn encrypter(&self, key: AeadKey, iv: Iv) -> Box<dyn MessageEncrypter> {
+    fn encrypter(&self, key: AeadKey, iv: Iv) -> Box<dyn RecordEncrypter> {
         Box::new(Protection::new(self.0, key, iv))
     }
 
-    fn decrypter(&self, key: AeadKey, iv: Iv) -> Box<dyn MessageDecrypter> {
+    fn decrypter(&self, key: AeadKey, iv: Iv) -> Box<dyn RecordDecrypter> {
         Box::new(Protection::new(self.0, key, iv))
     }
 
@@ -162,13 +162,13 @@ impl Protection {
     }
 }
 
-impl MessageEncrypter for Protection {
+impl RecordEncrypter for Protection {
     fn encrypt<'a>(
         &mut self,
-        msg: EncodedMessage<OutboundPlain<'_>>,
+        msg: Record<OutboundPlain<'_>>,
         seq: u64,
         out: &'a mut [u8],
-    ) -> Result<EncodedMessage<&'a [u8]>, Error> {
+    ) -> Result<Record<&'a [u8]>, Error> {
         let key = self.key.as_ref().ok_or(Error::EncryptError)?;
         // TLSInnerPlaintext: the content, then its real type, with no
         // padding; then the tag.
@@ -176,18 +176,17 @@ impl MessageEncrypter for Protection {
         let mut buf = EncryptBuffer::new(out, total)?;
         buf.extend_from_chunks(&msg.payload);
         buf.extend_from_slice(&msg.typ.to_array());
+        // Every protected record claims to be application data (RFC
+        // 8446 section 5.1), and the header it goes out under is the
+        // AAD.
+        let typ = ContentType::ApplicationData;
         let nonce = Nonce::new(&self.iv, seq).to_array()?;
+        let aad = make_tls13_aad(typ, msg.version.encode(), total);
         let tag = key
-            .seal(&nonce, &make_tls13_aad(total), buf.as_mut())
+            .seal(&nonce, &aad, buf.as_mut())
             .map_err(|_| Error::EncryptError)?;
         buf.extend_from_slice(tag.as_ref());
-        // Every protected record claims to be TLS 1.2 application
-        // data (RFC 8446 section 5.1).
-        Ok(EncodedMessage::new(
-            ContentType::ApplicationData,
-            ProtocolVersion::TLSv1_2,
-            buf.into_written(),
-        ))
+        Ok(Record::new(typ, msg.version, buf.into_written()))
     }
 
     fn encrypted_payload_len(&self, payload_len: usize) -> usize {
@@ -195,25 +194,27 @@ impl MessageEncrypter for Protection {
     }
 }
 
-impl MessageDecrypter for Protection {
+impl RecordDecrypter for Protection {
     fn decrypt<'a>(
         &mut self,
-        mut msg: EncodedMessage<InboundOpaque<'a>>,
+        mut msg: Record<InboundOpaque<'a>>,
         seq: u64,
-    ) -> Result<EncodedMessage<&'a [u8]>, Error> {
+    ) -> Result<Record<&'a [u8]>, Error> {
         // Exactly `DecryptError` for every failure of the AEAD: that
         // is what rustls looks for when it trial-decrypts rejected
         // early data.
         let key = self.key.as_ref().ok_or(Error::DecryptError)?;
         let payload = &mut msg.payload;
         let nonce = Nonce::new(&self.iv, seq).to_array()?;
-        let aad = make_tls13_aad(payload.len());
+        // The header as it arrived, so a record whose header was
+        // altered fails to authenticate.
+        let aad = make_tls13_aad(msg.typ, msg.version.version(), payload.len());
         let len = key
             .open(&nonce, &aad, payload)
             .map_err(|_| Error::DecryptError)?;
         payload.truncate(len);
         // Strips the padding, reads the real type, and checks the
         // record's size.
-        msg.into_tls13_unpadded_message()
+        msg.into_tls13_unpadded_record()
     }
 }

@@ -38,10 +38,15 @@ every dependant at once: cargo refuses to build the workspace until
 each names the new minor, and each then goes out too, so that its
 users get the new library.
 
-`rustls-scytale` goes out only while its `rustls` dependency is a
-release: it is pinned exactly to `=0.24.0-dev.1` now, and each
-development release of rustls may change the provider traits. Until
-rustls 0.24.0, leave it out.
+`rustls-scytale` pins its `rustls` exactly while rustls 0.24 is a
+development release, since each one may change the provider traits,
+and its own version is then a pre-release carrying the same suffix:
+`0.10.0-dev.2` for rustls `=0.24.0-dev.2`, `0.10.0-dev.2.1` for a fix
+against the same rustls, `0.10.0-dev.3` when it moves to the next.
+Cargo picks a pre-release only when it is named, so nobody gets one
+unasked. It becomes plain `0.10.0` with rustls 0.24.0, and takes the
+rules above from then on. Release it only for the rustls development
+release that is current.
 
 ## 2. Bump every place the version lives
 

@@ -3,7 +3,6 @@
 //! authentication and with resumption, over certificates and keys
 //! that OpenSSL made (`tests/data/generate`).
 
-use std::io::{Read, Write};
 use std::sync::Arc;
 
 use rustls::crypto::kx::SupportedKxGroup;
@@ -15,8 +14,8 @@ use rustls::pki_types::{
 };
 use rustls::server::WebPkiClientVerifier;
 use rustls::{
-    ClientConfig, ClientConnection, Connection, HandshakeKind, RootCertStore,
-    ServerConfig, ServerConnection, SupportedCipherSuite, VecInput,
+    ClientConfig, ClientSide, Connection, HandshakeKind, RootCertStore,
+    ServerConfig, ServerSide, SupportedCipherSuite, Tcp, VecInput,
 };
 use rustls_scytale as provider;
 
@@ -118,36 +117,73 @@ fn client_config(
     }
 }
 
-/// Moves everything one side has to send into the other's input.
-fn transfer(from: &mut impl Connection, to: &mut VecInput) {
-    let mut buf = Vec::new();
-    while from.wants_write() {
-        from.write_tls(&mut buf).unwrap();
-    }
-    let mut rest = &buf[..];
+/// Moves everything one side has queued into the other's input.
+fn transfer(from: &mut Vec<u8>, to: &mut VecInput) {
+    let mut rest = &from[..];
     while !rest.is_empty() {
         to.read(&mut rest).unwrap();
     }
+    from.clear();
 }
 
-/// A connected pair, handshake done, and the inputs each reads from.
+/// One end: its connection, the input it reads from, what it has
+/// queued to send, and the application data it has received.
+struct End<Side: rustls::SideData> {
+    conn: Connection<Side, Tcp>,
+    input: VecInput,
+    output: Vec<u8>,
+    received: Vec<u8>,
+}
+
+impl<Side: rustls::SideData> End<Side> {
+    fn new(conn: Connection<Side, Tcp>, output: Vec<u8>) -> Self {
+        End {
+            conn,
+            input: VecInput::default(),
+            output,
+            received: Vec::new(),
+        }
+    }
+
+    fn process(&mut self) -> Result<(), rustls::Error> {
+        self.conn
+            .read_tls(&mut self.input, &mut self.output)
+            .handle_all(&mut self.received)?;
+        Ok(())
+    }
+
+    fn write(&mut self, data: &[u8]) {
+        self.conn.write(data.into(), &mut self.output).unwrap();
+    }
+}
+
+/// A connected pair.
 struct Pair {
-    client: ClientConnection,
-    server: ServerConnection,
-    client_in: VecInput,
-    server_in: VecInput,
+    client: End<ClientSide>,
+    server: End<ServerSide>,
 }
 
 impl Pair {
-    fn connect(client: &Arc<ClientConfig>, server: &Arc<ServerConfig>) -> Self {
+    /// A pair whose client has sent its hello and nothing more.
+    fn start(client: &Arc<ClientConfig>, server: &Arc<ServerConfig>) -> Self {
         let name = ServerName::try_from("localhost").unwrap();
-        let mut pair = Pair {
-            client: client.connect(name).build().unwrap(),
-            server: ServerConnection::new(server.clone()).unwrap(),
-            client_in: VecInput::default(),
-            server_in: VecInput::default(),
-        };
-        while pair.client.is_handshaking() || pair.server.is_handshaking() {
+        let mut hello = Vec::new();
+        let client = client.connect(name).build(&mut hello).unwrap();
+        Pair {
+            client: End::new(client, hello),
+            server: End::new(
+                Connection::new(server.clone()).unwrap(),
+                Vec::new(),
+            ),
+        }
+    }
+
+    /// A pair with the handshake done.
+    fn connect(client: &Arc<ClientConfig>, server: &Arc<ServerConfig>) -> Self {
+        let mut pair = Pair::start(client, server);
+        while pair.client.conn.is_handshaking()
+            || pair.server.conn.is_handshaking()
+        {
             pair.round().unwrap();
         }
         // The ticket, if any, follows the handshake.
@@ -156,25 +192,20 @@ impl Pair {
     }
 
     fn round(&mut self) -> Result<(), rustls::Error> {
-        transfer(&mut self.client, &mut self.server_in);
-        self.server.process_new_packets(&mut self.server_in)?;
-        transfer(&mut self.server, &mut self.client_in);
-        self.client.process_new_packets(&mut self.client_in)?;
-        Ok(())
+        transfer(&mut self.client.output, &mut self.server.input);
+        self.server.process()?;
+        transfer(&mut self.server.output, &mut self.client.input);
+        self.client.process()
     }
 
     /// Application data each way, enough for several records.
     fn exchange(&mut self) {
         let message: Vec<u8> = (0..40_000u32).map(|i| i as u8).collect();
-        self.client.writer().write_all(&message).unwrap();
-        self.server.writer().write_all(b"and back").unwrap();
+        self.client.write(&message);
+        self.server.write(b"and back");
         self.round().unwrap();
-        let mut got = vec![0u8; message.len()];
-        self.server.reader().read_exact(&mut got).unwrap();
-        assert_eq!(got, message);
-        let mut back = [0u8; 8];
-        self.client.reader().read_exact(&mut back).unwrap();
-        assert_eq!(&back, b"and back");
+        assert_eq!(self.server.received, message);
+        assert_eq!(self.client.received, b"and back");
     }
 }
 
@@ -275,7 +306,7 @@ fn every_suite_with_every_key_type() {
             let client = Arc::new(client_config(&provider, dir, false));
             let mut pair = Pair::connect(&client, &server);
             assert_eq!(
-                pair.client.negotiated_cipher_suite(),
+                pair.client.conn.negotiated_cipher_suite(),
                 Some(suite),
                 "{dir}"
             );
@@ -309,11 +340,12 @@ fn every_key_exchange_group() {
             let mut pair = Pair::connect(&client, &server);
             assert_eq!(
                 pair.client
+                    .conn
                     .negotiated_key_exchange_group()
                     .map(|g| g.name()),
                 Some(group.name())
             );
-            assert_eq!(pair.client.protocol_version(), Some(version));
+            assert_eq!(pair.client.conn.protocol_version(), Some(version));
             pair.exchange();
         }
     }
@@ -328,16 +360,17 @@ fn defaults_negotiate_post_quantum() {
     let mut pair = Pair::connect(&client, &server);
     assert_eq!(
         pair.client
+            .conn
             .negotiated_key_exchange_group()
             .map(|g| g.name()),
         Some(provider::kx_group::X25519MLKEM768.name())
     );
     assert_eq!(
-        pair.client.protocol_version(),
+        pair.client.conn.protocol_version(),
         Some(ProtocolVersion::TLSv1_3)
     );
     assert_eq!(
-        pair.client.negotiated_cipher_suite(),
+        pair.client.conn.negotiated_cipher_suite(),
         Some(SupportedCipherSuite::Tls13(
             provider::cipher_suite::TLS13_AES_128_GCM_SHA256
         ))
@@ -366,7 +399,7 @@ fn client_authentication_with_every_key_form() {
                     .with_client_auth_cert(identity(dir), key)
                     .unwrap();
                 let mut pair = Pair::connect(&Arc::new(client), &server);
-                assert!(pair.server.peer_identity().is_some(), "{dir}");
+                assert!(pair.server.conn.peer_identity().is_some(), "{dir}");
                 pair.exchange();
             }
         }
@@ -386,10 +419,13 @@ fn resumption_with_tickets() {
         // The default client keeps sessions in memory.
         let client = Arc::new(client_config(&provider, "ecdsa-p384", false));
         let first = Pair::connect(&client, &server);
-        assert_eq!(first.client.handshake_kind(), Some(HandshakeKind::Full));
+        assert_eq!(
+            first.client.conn.handshake_kind(),
+            Some(HandshakeKind::Full)
+        );
         let mut second = Pair::connect(&client, &server);
         assert_eq!(
-            second.client.handshake_kind(),
+            second.client.conn.handshake_kind(),
             Some(HandshakeKind::Resumed)
         );
         second.exchange();
@@ -402,13 +438,7 @@ fn wrong_root_is_refused() {
     let provider = Arc::new(provider::DEFAULT_PROVIDER);
     let server = Arc::new(server_config(&provider, "ecdsa-p256", false));
     let client = Arc::new(client_config(&provider, "ecdsa-p384", false));
-    let name = ServerName::try_from("localhost").unwrap();
-    let mut pair = Pair {
-        client: client.connect(name).build().unwrap(),
-        server: ServerConnection::new(server).unwrap(),
-        client_in: VecInput::default(),
-        server_in: VecInput::default(),
-    };
+    let mut pair = Pair::start(&client, &server);
     let mut failed = false;
     for _ in 0..4 {
         if pair.round().is_err() {

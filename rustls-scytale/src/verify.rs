@@ -308,10 +308,8 @@ pub static ALL_VERIFICATION_ALGS: &[&dyn SignatureVerificationAlgorithm] = &[
 ///
 /// ML-DSA comes first, so a peer that holds an ML-DSA certificate
 /// beside a classical one is asked for the post-quantum one; a peer
-/// with one certificate signs with it whatever the order. rustls
-/// gives a provider no way to offer a scheme for TLS 1.3 only, so in
-/// a TLS 1.2 server's request for a client certificate ML-DSA is
-/// offered too, which the ML-DSA draft does not intend.
+/// with one certificate signs with it whatever the order. ML-DSA is
+/// defined for TLS 1.3 only, and rustls leaves it out of TLS 1.2.
 pub static SUPPORTED_SIG_ALGS: WebPkiSupportedAlgorithms =
     match WebPkiSupportedAlgorithms::new(
         ALL_VERIFICATION_ALGS,

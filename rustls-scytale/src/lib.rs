@@ -18,15 +18,6 @@
 //! # }
 //! ```
 //!
-//! or installs it once as the process default, for libraries that
-//! build their own configurations from [`CryptoProvider::get_default`]:
-//!
-//! ```
-//! # fn main() {
-//! let _ = rustls_scytale::DEFAULT_PROVIDER.install_default();
-//! # }
-//! ```
-//!
 //! # What it offers
 //!
 //! TLS 1.3:
@@ -84,7 +75,6 @@
 //! rustls asks of a provider: the record layouts, the lists, and the
 //! traits between them. It is not FIPS validated, and says so.
 //!
-//! [`CryptoProvider::get_default`]: rustls::crypto::CryptoProvider::get_default
 //! [rustls]: ::rustls
 //! [scytale]: ::scytale
 

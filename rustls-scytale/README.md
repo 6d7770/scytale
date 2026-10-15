@@ -4,7 +4,7 @@ A cryptography provider for [rustls](https://github.com/rustls/rustls)
 that uses the
 [scytale](https://github.com/user-serviceable-parts/scytale) library.
 
-This provider is built against rustls 0.24.0-dev.1, the current
+This provider is built against rustls 0.24.0-dev.2, the current
 development release, and will move to 0.24.0 when that is released.
 
 This crate is not part of the rustls project, nor endorsed by it in any way.
@@ -25,7 +25,7 @@ This crate is not part of the rustls project, nor endorsed by it in any way.
 
 ```toml
 [dependencies]
-rustls = "=0.24.0-dev.1"
+rustls = "=0.24.0-dev.2"
 rustls-scytale = "0.9"
 ```
 
@@ -39,13 +39,6 @@ let config = rustls::ClientConfig::builder(Arc::new(
 ))
 .with_root_certificates(roots)
 .with_no_client_auth()?;
-```
-
-or install it once as the process default, for libraries that build
-their own configurations from `CryptoProvider::get_default()`:
-
-```rust,ignore
-rustls_scytale::DEFAULT_PROVIDER.install_default().ok();
 ```
 
 `DEFAULT_TLS13_PROVIDER` and `DEFAULT_TLS12_PROVIDER` are the same
@@ -138,9 +131,8 @@ provider.tls12_cipher_suites.to_mut().extend([
 - **ML-DSA is preferred**, so a peer that holds an ML-DSA
   certificate beside a classical one is asked for the post-quantum
   one; a peer with one certificate signs with it whatever the
-  order. rustls gives a provider no way to offer a scheme for TLS
-  1.3 only, so a TLS 1.2 server's request for a client certificate
-  lists ML-DSA too.
+  order. ML-DSA is defined for TLS 1.3 only, and rustls leaves it
+  out of TLS 1.2.
 - **An RSA key must be `rsaEncryption`.** An `id-RSASSA-PSS` key is
   refused: its certificate's parameters would not match the public
   key rustls compares it against. An `rsaEncryption` key signs PSS.
@@ -158,8 +150,13 @@ rustls. This table does:
 | --- | --- |
 | 0.9 | 0.24.0-dev.1, pinned exactly |
 
-A new rustls minor version arrives in a new rustls-scytale minor
-version, and a row here says so.
+While rustls 0.24 is a development release, each rustls-scytale
+release pins one rustls development release exactly and carries its
+suffix: rustls-scytale 0.10.0-dev.2 is for rustls 0.24.0-dev.2, and
+a fix to it would be 0.10.0-dev.2.1. Cargo takes a pre-release only
+when it is named, so ask for it with `=`. rustls-scytale 0.10.0
+follows rustls 0.24.0. After that, a new rustls minor version arrives
+in a new rustls-scytale minor version, and a row here says so.
 
 ## How it is tested
 
