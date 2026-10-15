@@ -1,7 +1,6 @@
 [package]
 name = "scytale-ring-tests"
 description = "ring's own test suite, run against scytale-ring"
-version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true

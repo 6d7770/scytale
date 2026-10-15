@@ -243,7 +243,7 @@ dependencies = [
 
 [[package]]
 name = "scytale-ring-tests"
-version = "0.9.0"
+version = "0.0.0"
 dependencies = [
  "scytale-ring",
  "untrusted",

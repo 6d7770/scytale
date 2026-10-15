@@ -1,9 +1,8 @@
 [package]
 name = "rustls-scytale"
 description = "A rustls crypto provider implemented with scytale: pure Rust, no C compiler, no build script, post-quantum by default"
-# scytale's version: the two are released together. Which rustls
-# this works with is in the README's table.
-version.workspace = true
+# Which rustls this works with is in the README's table.
+version = "0.9.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -14,7 +13,7 @@ keywords = ["rustls", "tls", "cryptography", "post-quantum", "no-std"]
 categories = ["cryptography", "network-programming", "no-std"]
 
 [dependencies]
-# Moves with the workspace version.
+# The oldest release with everything this crate uses.
 scytale = { path = "../scytale", version = "0.9" }
 # Pinned exactly while rustls 0.24 is a development release: each one
 # may change the provider traits.

@@ -71,8 +71,8 @@ instead: it is that provider, built on scytale directly.
 
 ## Which ring
 
-The version number is scytale's, since the two are released together,
-so it says nothing about ring. This table does:
+scytale-ring's version number is its own and says nothing about
+ring. This table does:
 
 | scytale-ring | ring API | Tested with |
 | --- | --- | --- |

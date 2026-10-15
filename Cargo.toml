@@ -9,7 +9,6 @@ members = [
 ]
 
 [workspace.package]
-version = "0.9.0"
 edition = "2024"
 # `as_chunks_mut`, which turns a byte slice into cipher blocks without
 # unsafe, landed in 1.88.
