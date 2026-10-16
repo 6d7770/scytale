@@ -41,7 +41,7 @@ In the manifest of the crate that uses ring, change the dependency:
 
 ```toml
 [dependencies]
-ring = { package = "scytale-ring", version = "0.9" }
+ring = { package = "scytale-ring", version = "0.10" }
 ```
 
 That is the whole change. `use ring::aead;`, `ring::digest::SHA256`,
@@ -76,7 +76,7 @@ ring. This table does:
 
 | scytale-ring | ring API | Tested with |
 | --- | --- | --- |
-| 0.8, 0.9 | 0.17, checked against 0.17.14 | rustls 0.23.45, rustls-webpki 0.103.15 |
+| 0.8 to 0.10 | 0.17, checked against 0.17.14 | rustls 0.23.45, rustls-webpki 0.103.15 |
 
 A new ring API arrives in a new scytale-ring minor version, and a row
 here says so.
