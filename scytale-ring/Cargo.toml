@@ -2,7 +2,7 @@
 name = "scytale-ring"
 description = "A drop-in replacement for ring 0.17, implemented with scytale: pure Rust, no C compiler, no build script"
 # Which ring API this presents is in the description and the docs.
-version = "0.9.0"
+version = "0.10.0"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -19,7 +19,7 @@ name = "ring"
 
 [dependencies]
 # The oldest release with everything this crate uses.
-scytale = { path = "../scytale", version = "0.9" }
+scytale = { path = "../scytale", version = "0.10.0" }
 untrusted = "0.9"
 zeroize = { version = "1", default-features = false }
 

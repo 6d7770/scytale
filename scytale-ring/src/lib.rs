@@ -16,7 +16,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! ring = { package = "scytale-ring", version = "0.8" }
+//! ring = { package = "scytale-ring", version = "0.10" }
 //! ```
 //!
 //! That reaches the crate whose manifest it is. It cannot reach a
